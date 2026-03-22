@@ -1389,10 +1389,10 @@ function Btn({children,onClick,variant='primary',sm,style={}}){
   return<button onClick={onClick} style={{...base,...(variants[variant]||variants.primary)}}>{children}</button>
 }
 function Inp({placeholder,value,onChange,onKeyDown,type='text',style={}}){
-  return<input type={type} placeholder={placeholder} value={value} onChange={onChange} onKeyDown={onKeyDown} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:500,outline:'none',width:'100%',...style}}/>
+  return<input type={type} placeholder={placeholder} value={value} onChange={onChange} onKeyDown={onKeyDown} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:500,outline:'none',width:'100%',boxSizing:'border-box',maxWidth:'100%',...style}}/>
 }
 function Sel({value,onChange,children,style={}}){
-  return<select value={value} onChange={onChange} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,outline:'none',width:'100%',...style}}>{children}</select>
+  return<select value={value} onChange={onChange} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,outline:'none',width:'100%',boxSizing:'border-box',maxWidth:'100%',...style}}>{children}</select>
 }
 
 // ── MISSION ITEM ───────────────────────────────────────────────────────────
@@ -1923,9 +1923,9 @@ function Attributes({G,updAM}){
 // ── MODAL HOST ─────────────────────────────────────────────────────────────
 function ModalHost({modal,setModal,G,addM,addGoal,addX,updPlayer,buyShop,addShopItem,delShopItem,endDay}){
   const close=()=>setModal(null)
-  const overlay={position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:9990,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:'12px'}
+  const overlay={position:'fixed',top:0,left:0,width:'100%',height:'100%',background:'rgba(0,0,0,0.85)',zIndex:9990,display:'grid',placeItems:'center',backdropFilter:'blur(4px)',padding:'16px',boxSizing:'border-box'}
   const isMobileModal=window.innerWidth<768
-  const card={background:'#0f0f1a',border:'1px solid #7c3aed',borderRadius:8,padding:isMobileModal?14:28,width:'100%',maxWidth:480,boxShadow:'0 0 40px rgba(124,58,237,0.3)',maxHeight:'88vh',overflowY:'auto'}
+  const card={background:'#0f0f1a',border:'1px solid #7c3aed',borderRadius:8,padding:isMobileModal?14:28,width:'100%',maxWidth:480,boxShadow:'0 0 40px rgba(124,58,237,0.3)',maxHeight:'80vh',overflowY:'auto',boxSizing:'border-box',overflowX:'hidden',position:'relative'}
   const mh2={fontFamily:"'Orbitron',monospace",fontSize:'0.95rem',color:'#a855f7',marginBottom:20,textTransform:'uppercase',letterSpacing:2}
   const row={marginBottom:14}
   const lbl={fontSize:11,textTransform:'uppercase',letterSpacing:1.5,color:'#64748b',marginBottom:6,display:'block'}
