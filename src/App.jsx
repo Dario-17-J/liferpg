@@ -1531,7 +1531,93 @@ function Dashboard({G,lv,rank,title,xpPct,toggleM,setPage,setModal,goalTab,setGo
   const pending=ms.filter(m=>!m.done&&!m.pen&&m.penalty>0)
   const msgs=[`${pct}% of today's missions complete.`,G.streak>0?`${G.streak} day streak active. Keep it.`:'Build your streak. Consistency = power.',`Level ${lv} · Rank ${rank.lbl}`,'THE SYSTEM OBSERVES. Complete your missions.']
   const [msgIdx,setMsgIdx]=useState(0)
+  const [isMobile,setIsMobile]=useState(window.innerWidth<768)
+  useEffect(()=>{const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn)},[])
   useEffect(()=>{const t=setInterval(()=>setMsgIdx(i=>(i+1)%msgs.length),5000);return()=>clearInterval(t)},[G.xp,G.streak])
+
+  // ── MOBILE DASHBOARD ──
+  if(isMobile) return(
+    <div style={{padding:'0 4px'}}>
+      {/* Player Card */}
+      <div style={{background:'#0f0f1a',border:'1px solid #1e1e35',borderRadius:8,padding:16,marginBottom:12,position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:'linear-gradient(90deg,#7c3aed,#06b6d4,#7c3aed)'}}/>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+          <div onClick={()=>setModal({type:'player'})} style={{width:60,height:60,borderRadius:8,background:'linear-gradient(135deg,#1a0a3e,#0a1a3e)',border:'2px solid #7c3aed',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.8rem',cursor:'pointer',flexShrink:0}}>{G.player.av}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:700,color:'#e2e8f0'}}>{G.player.n}</div>
+            <RankBadge rank={rank}/>
+            <div style={{fontSize:11,color:'#a855f7',marginTop:2,fontStyle:'italic'}}>{G.player.t||title.split('—')[0]}</div>
+          </div>
+          <div style={{textAlign:'right',flexShrink:0}}>
+            <div style={{fontSize:10,color:'#64748b'}}>Today</div>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#06b6d4'}}>{pct}%</div>
+          </div>
+        </div>
+        {/* XP Bar */}
+        <div style={{marginBottom:3,display:'flex',justifyContent:'space-between',fontSize:10,color:'#64748b'}}>
+          <span>Level {lv}</span>
+          <span style={{color:'#a855f7',fontFamily:"'Share Tech Mono',monospace"}}>{G.xp}/{getLvXP(lv+1)} XP</span>
+        </div>
+        <div style={{height:6,background:'#13131f',border:'1px solid #1e1e35',borderRadius:3,overflow:'hidden'}}>
+          <div style={{height:'100%',width:`${xpPct}%`,background:'linear-gradient(90deg,#7c3aed,#a855f7)',boxShadow:'0 0 8px #7c3aed',transition:'width 0.8s'}}/>
+        </div>
+        {/* Attr grid — 3 columns so all 6 fit */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginTop:12,paddingTop:12,borderTop:'1px solid #1e1e35'}}>
+          {Object.keys(G.am).map(k=>{
+            const m=G.am[k],v=Math.round((G.attrs[k]||0)*10)/10,p=Math.min(100,G.attrs[k]||0)
+            return<div key={k} onClick={()=>setPage('attributes')} style={{textAlign:'center',padding:'8px 4px',background:'#13131f',border:'1px solid #1e1e35',borderRadius:6,cursor:'pointer'}}>
+              <div style={{fontSize:'1rem'}}>{m.e}</div>
+              <div style={{fontSize:9,fontWeight:700,textTransform:'uppercase',color:'#e2e8f0',marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.n}</div>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:'0.9rem',fontWeight:700,color:m.c}}>{v}</div>
+              <div style={{height:3,background:'#1e1e35',borderRadius:1,marginTop:3,overflow:'hidden'}}><div style={{height:'100%',width:`${p}%`,background:m.c}}/></div>
+            </div>
+          })}
+        </div>
+      </div>
+
+      {/* Streak + Gold row */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:12,background:'#0f0f1a',border:'1px solid #1e1e35',borderRadius:8,textAlign:'center'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.4rem',fontWeight:900,color:'#f59e0b'}}>{G.streak}</div>
+          <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>🔥 Streak</div>
+        </div>
+        <div style={{padding:12,background:'#0f0f1a',border:'1px solid #1e1e35',borderRadius:8,textAlign:'center'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.4rem',fontWeight:900,color:'#a855f7'}}>{G.txp||0}</div>
+          <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>⚡ XP</div>
+        </div>
+        <div onClick={()=>setModal({type:'shop'})} style={{padding:12,background:'#0f0f1a',border:'1px solid rgba(245,158,11,0.3)',borderRadius:8,textAlign:'center',cursor:'pointer'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.4rem',fontWeight:900,color:'#f59e0b'}}>{G.gold}</div>
+          <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>🥇 Gold</div>
+        </div>
+      </div>
+
+      {/* Missions */}
+      <Panel title="Today's Missions" style={{marginBottom:12}} action={<Btn sm onClick={()=>setPage('missions')}>VIEW ALL</Btn>}>
+        {ms.length?ms.slice(0,4).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>{}}/>):<div style={{textAlign:'center',padding:12,color:'#334155',fontSize:13}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add</span></div>}
+        {ms.length>4&&<div onClick={()=>setPage('missions')} style={{textAlign:'center',padding:6,fontSize:12,color:'#64748b',cursor:'pointer'}}>+{ms.length-4} more →</div>}
+      </Panel>
+
+      {/* Pending penalties */}
+      {pending.length>0&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:11,color:'#ef4444',padding:10,background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,marginBottom:12}}>⚠ {pending.length} missions · -{pending.reduce((s,m)=>s+m.penalty,0)} XP pending</div>}
+      <Btn variant="danger" onClick={()=>{const ms=G.missions.filter(m=>!m.done&&!m.pen&&m.penalty>0);if(!ms.length){alert('No penalties!');return;}setModal({type:'endday'})}} style={{width:'100%',marginBottom:12}}>⚠ CLOSE DAY</Btn>
+
+      {/* Goals — single column */}
+      <Panel title="Goals" style={{marginBottom:12}} action={<Btn sm onClick={()=>setModal({type:'goal'})}>+ ADD</Btn>}>
+        <div style={{fontSize:11,textTransform:'uppercase',letterSpacing:1,color:'#06b6d4',marginBottom:8}}>Short-Term</div>
+        <GoalList goals={G.goals} type="short" incGoal={incGoal} delGoal={delGoal}/>
+        <div style={{height:1,background:'#1e1e35',margin:'10px 0'}}/>
+        <div style={{fontSize:11,textTransform:'uppercase',letterSpacing:1,color:'#a855f7',marginBottom:8}}>Long-Term</div>
+        <GoalList goals={G.goals} type="long" incGoal={incGoal} delGoal={delGoal}/>
+      </Panel>
+
+      {/* Week mini */}
+      <Panel title="This Week" style={{marginBottom:12}}>
+        <WeekGrid G={G}/>
+      </Panel>
+    </div>
+  )
+
+  // ── DESKTOP DASHBOARD (unchanged) ──
   return(
     <div>
       {/* PLAYER CARD */}
