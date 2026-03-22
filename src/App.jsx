@@ -1180,9 +1180,6 @@ export default function App(){
           if(!s.am)s.am=JSON.parse(JSON.stringify(DEFAM))
           if(!s.shop)s.shop=DEFSHOP.map(x=>({...x}))
           Object.keys(DEFAM).forEach(k=>{if(s.attrs[k]===undefined)s.attrs[k]=0;if(!s.am[k])s.am[k]=JSON.parse(JSON.stringify(DEFAM[k]))})
-          // Always load is_pro from profiles table — most reliable source
-          const {data: profile} = await supabase.from('profiles').select('is_pro').eq('id',session.user.id).maybeSingle()
-          s.is_pro = profile?.is_pro === true
           setG(s)
           setOnboarding(false)
         } else {
