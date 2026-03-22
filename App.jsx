@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase.js'
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────
+// PRO LIMITS
+const FREE_MISSION_LIMIT = 5
+const PRO_MONTHLY = 54
+const PRO_LIFETIME = 999
+const isPro = (G) => G?.is_pro === true
 const LXP=[0,300,700,1300,2100,3200,4600,6500,9000,12000,16000,21000,27000,34000,43000,54000,67000,83000,102000,125000,150000]
 const DEFAM={physical:{n:'Physical',d:'Strength, fitness & body health',e:'💪',c:'#ef4444'},mental:{n:'Mental',d:'Focus, learning & intelligence',e:'🧠',c:'#7c3aed'},social:{n:'Social',d:'Relationships & communication',e:'🌐',c:'#06b6d4'},financial:{n:'Financial',d:'Money, career & wealth',e:'💰',c:'#f59e0b'},creative:{n:'Creative',d:'Art, ideas & expression',e:'🎨',c:'#ec4899'},discipline:{n:'Discipline',d:'Consistency & willpower',e:'⚡',c:'#10b981'}}
 const DEFSHOP=[
@@ -55,6 +60,7 @@ function getTitle(l){let t=TITLES[0];Object.keys(TITLES).map(Number).sort((a,b)=
 const td=()=>{const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');}
 const localDS=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
 const wkStr=()=>{const d=new Date(),dy=d.getDay(),m=new Date(d);m.setDate(d.getDate()-(dy===0?6:dy-1));return localDS(m);}
+const RAZORPAY_KEY = import.meta.env.VITE_RAZORPAY_KEY || ''
 const BLANK=()=>({player:{n:'Hunter',av:'🧑‍💻',t:''},xp:0,gold:0,txp:0,streak:0,best:0,lastDay:null,missions:[{id:1,n:'Morning Workout',tier:'S',cat:'physical',xp:100,penalty:50,done:false,pen:false},{id:2,n:'Deep Work / Study (2 hrs)',tier:'S',cat:'mental',xp:100,penalty:50,done:false,pen:false},{id:3,n:'Drink 2L Water',tier:'A',cat:'physical',xp:25,penalty:0,done:false,pen:false},{id:4,n:'Read 20 min',tier:'A',cat:'mental',xp:50,penalty:10,done:false,pen:false},{id:5,n:'No social media before noon',tier:'A',cat:'discipline',xp:50,penalty:25,done:false,pen:false}],extras:[{id:10,n:'Learn something new',done:false,week:wkStr()},{id:11,n:'Reach out to someone you care about',done:false,week:wkStr()}],goals:[{id:20,n:'Build a consistent streak',type:'short',target:7,prog:0,created:td()},{id:21,n:'Level up to Challenger',type:'long',target:20,prog:0,created:td()}],history:{},attrs:{physical:0,mental:0,social:0,financial:0,creative:0,discipline:0},am:JSON.parse(JSON.stringify(DEFAM)),shop:DEFSHOP.map(x=>({...x}))})
 
 
@@ -478,7 +484,7 @@ function LeaderboardPage({session}) {
               <div style={{fontFamily:"'Orbitron',monospace", fontSize:i<3?'1.2rem':'0.8rem', minWidth:32, textAlign:'center', color:i<3?undefined:'#64748b'}}>{medal}</div>
               <div style={{fontSize:'1.3rem'}}>{u.avatar||'🧑‍💻'}</div>
               <div style={{flex:1}}>
-                <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{u.username||'Hunter'}{isMe?' (You)':''}{u.is_pro?' 👑':''}</div>
+                <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{u.username||'Hunter'}{isMe?' (You)':''}{u.is_pro?<span style={{fontSize:9,color:'#f59e0b',fontFamily:"'Orbitron',monospace",marginLeft:4,border:'1px solid rgba(245,158,11,0.4)',borderRadius:3,padding:'1px 4px'}}>👑 PRO</span>:null}</div>
                 <div style={{fontSize:10, color:'#64748b'}}>{u.rank_label||'DORMANT I'}</div>
               </div>
               <div style={{textAlign:'right'}}>
@@ -943,6 +949,126 @@ function ChallengePage({G, session, notif}) {
   )
 }
 
+
+// ── LOCK ICON — shown on disabled pro features ─────────────────────────────
+function LockIcon({size=16}){
+  return <span style={{fontSize:size,filter:'grayscale(1)',opacity:0.6}}>🔒</span>
+}
+
+// ── PRO UPGRADE MODAL ──────────────────────────────────────────────────────
+function ProUpgradeModal({close, razorpayKey, session, G, onSuccess}){
+  const [loading, setLoading] = useState(false)
+  const [plan, setPlan] = useState('lifetime')
+
+  const handlePay = () => {
+    if(!razorpayKey){
+      alert('Payment not configured yet. Coming soon!')
+      return
+    }
+    setLoading(true)
+    const amount = plan==='lifetime' ? PRO_LIFETIME*100 : PRO_MONTHLY*100
+    const options = {
+      key: razorpayKey,
+      amount,
+      currency: 'INR',
+      name: 'Life RPG',
+      description: plan==='lifetime' ? 'Pro Lifetime Access' : 'Pro Monthly',
+      image: '⚡',
+      prefill: {
+        email: session?.user?.email || '',
+        name: G?.player?.n || 'Hunter'
+      },
+      theme: { color: '#7c3aed' },
+      handler: async (response) => {
+        // Payment successful - upgrade user in DB
+        await supabase.from('profiles').update({is_pro: true}).eq('id', session.user.id)
+        await supabase.from('game_state').update({
+          state: {...G, is_pro: true}
+        }).eq('user_id', session.user.id)
+        onSuccess()
+        close()
+        setLoading(false)
+      },
+      modal: { ondismiss: () => setLoading(false) }
+    }
+    const rzp = new window.Razorpay(options)
+    rzp.open()
+  }
+
+  const features = [
+    {icon:'⚔️', text:'Unlimited missions (free = 5 max)'},
+    {icon:'👥', text:'Friends system — compete with others'},
+    {icon:'📈', text:'Advanced analytics — 30-day charts'},
+    {icon:'🎯', text:'Weekly community challenges'},
+    {icon:'👑', text:'PRO badge on leaderboard'},
+    {icon:'🏅', text:'Exclusive PRO-only shop badges'},
+    {icon:'☁️', text:'Priority cloud sync'},
+  ]
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:9995,display:'grid',placeItems:'center',backdropFilter:'blur(6px)',padding:16}} onClick={e=>{if(e.target===e.currentTarget)close()}}>
+      <div style={{background:'#0a0a0f',border:'1px solid #7c3aed',borderRadius:12,padding:24,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 0 60px rgba(124,58,237,0.4)'}}>
+        {/* Header */}
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <div style={{fontSize:'2rem',marginBottom:6}}>👑</div>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.3rem',fontWeight:900,background:'linear-gradient(135deg,#f59e0b,#a855f7)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>LIFE RPG PRO</div>
+          <div style={{fontSize:12,color:'#64748b',marginTop:4}}>Unlock your full potential</div>
+        </div>
+
+        {/* Plan selector */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:20}}>
+          <div onClick={()=>setPlan('monthly')} style={{padding:14,background:plan==='monthly'?'rgba(124,58,237,0.15)':'#13131f',border:`2px solid ${plan==='monthly'?'#7c3aed':'#1e1e35'}`,borderRadius:8,textAlign:'center',cursor:'pointer',transition:'all 0.2s'}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#a855f7'}}>₹54</div>
+            <div style={{fontSize:10,color:'#64748b',marginTop:2,textTransform:'uppercase',letterSpacing:1}}>Per Month</div>
+            <div style={{fontSize:9,color:'#334155',marginTop:4}}>Cancel anytime</div>
+          </div>
+          <div onClick={()=>setPlan('lifetime')} style={{padding:14,background:plan==='lifetime'?'rgba(245,158,11,0.12)':'#13131f',border:`2px solid ${plan==='lifetime'?'#f59e0b':'#1e1e35'}`,borderRadius:8,textAlign:'center',cursor:'pointer',transition:'all 0.2s',position:'relative'}}>
+            <div style={{position:'absolute',top:-8,left:'50%',transform:'translateX(-50%)',background:'#f59e0b',color:'black',fontSize:8,fontWeight:700,padding:'2px 8px',borderRadius:10,textTransform:'uppercase',letterSpacing:1,whiteSpace:'nowrap'}}>BEST VALUE</div>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#f59e0b'}}>₹999</div>
+            <div style={{fontSize:10,color:'#64748b',marginTop:2,textTransform:'uppercase',letterSpacing:1}}>Lifetime</div>
+            <div style={{fontSize:9,color:'#10b981',marginTop:4}}>Pay once, use forever</div>
+          </div>
+        </div>
+
+        {/* Features */}
+        <div style={{marginBottom:20}}>
+          {features.map((f,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderBottom:i<features.length-1?'1px solid #1e1e35':undefined}}>
+              <span>{f.icon}</span>
+              <span style={{fontSize:12,color:'#94a3b8'}}>{f.text}</span>
+              <span style={{marginLeft:'auto',color:'#10b981',fontSize:12}}>✓</span>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <button onClick={handlePay} disabled={loading} style={{width:'100%',padding:14,background:'linear-gradient(135deg,#7c3aed,#a855f7)',border:'none',borderRadius:8,color:'white',fontFamily:"'Orbitron',monospace",fontSize:14,fontWeight:700,letterSpacing:1,cursor:'pointer',marginBottom:8}}>
+          {loading?'Processing...':plan==='lifetime'?'⚡ GET PRO — ₹999':'⚡ GET PRO — ₹54/mo'}
+        </button>
+        <button onClick={close} style={{width:'100%',padding:8,background:'none',border:'none',color:'#334155',cursor:'pointer',fontSize:12,fontFamily:"'Rajdhani',sans-serif"}}>Maybe later</button>
+      </div>
+    </div>
+  )
+}
+
+// ── LOCKED FEATURE PAGE ───────────────────────────────────────────────────
+function LockedFeature({name, desc, setShowPro}){
+  return(
+    <div style={{maxWidth:500,margin:'60px auto',textAlign:'center',padding:32}}>
+      <div style={{fontSize:'3rem',marginBottom:12}}>🔒</div>
+      <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#e2e8f0',marginBottom:8}}>{name}</div>
+      <div style={{fontSize:13,color:'#64748b',marginBottom:24,lineHeight:1.7}}>{desc}</div>
+      <div style={{padding:16,background:'rgba(124,58,237,0.06)',border:'1px solid rgba(124,58,237,0.2)',borderRadius:8,marginBottom:24}}>
+        <div style={{fontSize:11,color:'#64748b',marginBottom:4,textTransform:'uppercase',letterSpacing:1}}>This is a PRO feature</div>
+        <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1rem',color:'#a855f7'}}>Upgrade for ₹999 lifetime or ₹54/month</div>
+      </div>
+      <button onClick={()=>setShowPro(true)} style={{padding:'14px 32px',background:'linear-gradient(135deg,#7c3aed,#a855f7)',border:'none',borderRadius:8,color:'white',fontFamily:"'Orbitron',monospace",fontSize:13,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>
+        👑 UNLOCK PRO
+      </button>
+    </div>
+  )
+}
+
 // ── MAIN APP ───────────────────────────────────────────────────────────────
 export default function App(){
   const [session,setSession]=useState(null)
@@ -956,6 +1082,7 @@ export default function App(){
   const [calM,setCalM]=useState(new Date().getMonth())
   const [goalTab,setGoalTab]=useState({d:'short',w:'short'})
   const [lvUpAnim,setLvUpAnim]=useState(null)
+  const [showPro,setShowPro]=useState(false)
   const saveTimer=useRef(null)
 
   // ── AUTH ──
@@ -1103,7 +1230,14 @@ export default function App(){
   }
 
   const delM=(id)=>upd(s=>{s.missions=s.missions.filter(m=>m.id!==id);return s})
-  const addM=(data)=>upd(s=>{s.missions.push({id:Date.now(),...data,done:false,pen:false});return s})
+  const addM=(data)=>upd(s=>{
+    if(!isPro(s)&&s.missions.length>=FREE_MISSION_LIMIT){
+      setShowPro(true)
+      return s
+    }
+    s.missions.push({id:Date.now(),...data,done:false,pen:false})
+    return s
+  })
 
   const toggleX=(id)=>upd(s=>{
     const x=s.extras.find(e=>e.id===id);if(!x)return s
@@ -1147,6 +1281,11 @@ export default function App(){
   const signOut=()=>supabase.auth.signOut()
   const signIn=()=>supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}})
 
+  const upgradeToPro=()=>{
+    upd(s=>{s.is_pro=true;return s})
+    notif('👑 Welcome to PRO! All features unlocked!','levelup')
+  }
+
   const completeOnboarding=({name,avatar,missions})=>{
     const newState={...BLANK(),player:{n:name,av:avatar,t:''},missions}
     setG(newState)
@@ -1187,11 +1326,12 @@ export default function App(){
       </div>
       {/* LEVEL UP */}
       {lvUpAnim&&<LevelUpOverlay data={lvUpAnim}/>}
+      {showPro&&<ProUpgradeModal close={()=>setShowPro(false)} razorpayKey={RAZORPAY_KEY} session={session} G={G} onSuccess={upgradeToPro}/>}
       {/* NAV */}
-      <NavBar G={G} page={page} setPage={setPage} lv={lv} rank={rank} setModal={setModal} signOut={signOut}/>
+      <NavBar G={G} page={page} setPage={setPage} lv={lv} rank={rank} setModal={setModal} signOut={signOut} setShowPro={setShowPro}/>
       {/* PAGES */}
       <div style={{maxWidth:1400,margin:'0 auto',padding:20}}>
-        {page==='dashboard'&&<Dashboard G={G} lv={lv} rank={rank} title={title} xpPct={xpPct} toggleM={toggleM} setPage={setPage} setModal={setModal} goalTab={goalTab} setGoalTab={setGoalTab} incGoal={incGoal} delGoal={delGoal} toggleX={toggleX} delX={delX}/>}
+        {page==='dashboard'&&<Dashboard G={G} lv={lv} rank={rank} title={title} xpPct={xpPct} toggleM={toggleM} delM={delM} setPage={setPage} setModal={setModal} goalTab={goalTab} setGoalTab={setGoalTab} incGoal={incGoal} delGoal={delGoal} toggleX={toggleX} delX={delX} setShowPro={setShowPro}/>}
         {page==='missions'&&<Missions G={G} toggleM={toggleM} delM={delM} setModal={setModal} endDay={endDay} toggleX={toggleX} addX={addX} delX={delX}/>}
         {page==='weekly'&&<Weekly G={G} goalTab={goalTab} setGoalTab={setGoalTab} incGoal={incGoal} delGoal={delGoal} toggleX={toggleX} addX={addX} delX={delX} setModal={setModal}/>}
         {page==='calendar'&&<Calendar G={G} calY={calY} calM={calM} setCalY={setCalY} setCalM={setCalM} setModal={setModal}/>}
@@ -1199,9 +1339,9 @@ export default function App(){
         {page==='profile'&&<ProfilePage G={G} session={session} lv={lv} rank={rank} title={title} xpPct={xpPct} setModal={setModal}/>}
         {page==='community'&&<CommunityPage G={G} session={session} rank={rank} lv={lv}/>}
         {page==='leaderboard'&&<LeaderboardPage session={session}/>}
-        {page==='friends'&&<FriendsPage G={G} session={session}/>}
-        {page==='analytics'&&<AnalyticsPage G={G}/>}
-        {page==='challenge'&&<ChallengePage G={G} session={session} notif={notif}/>}
+        {page==='friends'&&(isPro(G)?<FriendsPage G={G} session={session}/>:<LockedFeature name="Friends System" desc="Add friends, share codes, compete on streaks" setShowPro={setShowPro}/>)}
+        {page==='analytics'&&(isPro(G)?<AnalyticsPage G={G}/>:<LockedFeature name="Analytics" desc="30-day charts, best days, attribute growth" setShowPro={setShowPro}/>)}
+        {page==='challenge'&&(isPro(G)?<ChallengePage G={G} session={session} notif={notif}/>:<LockedFeature name="Weekly Challenge" desc="Vote and compete in community challenges" setShowPro={setShowPro}/>)}
       </div>
       {/* MODALS */}
       {modal&&<ModalHost modal={modal} setModal={setModal} G={G} addM={addM} addGoal={addGoal} addX={addX} updPlayer={updPlayer} buyShop={buyShop} addShopItem={addShopItem} delShopItem={delShopItem} endDay={endDay}/>}
@@ -1259,7 +1399,7 @@ function LevelUpOverlay({data}){
 }
 
 // ── NAV ────────────────────────────────────────────────────────────────────
-function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
+function NavBar({G,page,setPage,lv,rank,setModal,signOut,setShowPro}){
   const tabs=[
     {id:'dashboard',icon:'🏠',label:'Dashboard'},
     {id:'missions',icon:'⚔',label:'Missions'},
@@ -1274,55 +1414,52 @@ function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
     {id:'challenge',icon:'🎯',label:'Challenge'},
   ]
   const [sideOpen,setSideOpen]=useState(false)
+  const [isMobile,setIsMobile]=useState(window.innerWidth<768)
+  React.useEffect(()=>{
+    const fn=()=>setIsMobile(window.innerWidth<768)
+    window.addEventListener('resize',fn)
+    return()=>window.removeEventListener('resize',fn)
+  },[])
   const navTo=(id)=>{setPage(id);setSideOpen(false);}
-  return(
+
+  // ── MOBILE NAV ──
+  if(isMobile) return(
     <>
-      {/* SIDEBAR OVERLAY */}
-      {sideOpen&&<div onClick={()=>setSideOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:998,backdropFilter:'blur(2px)'}}/>}
-      {/* SIDEBAR */}
-      <div style={{position:'fixed',top:0,left:sideOpen?0:'-260px',width:250,height:'100vh',background:'#0a0a0f',borderRight:'1px solid #1e1e35',zIndex:999,transition:'left 0.3s cubic-bezier(0.4,0,0.2,1)',display:'flex',flexDirection:'column',overflowY:'auto'}}>
+      {sideOpen&&<div onClick={()=>setSideOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:998,backdropFilter:'blur(3px)'}}/>}
+      <div style={{position:'fixed',top:0,left:sideOpen?0:'-270px',width:260,height:'100vh',background:'#0a0a0f',borderRight:'1px solid #1e1e35',zIndex:999,transition:'left 0.3s cubic-bezier(0.4,0,0.2,1)',display:'flex',flexDirection:'column',overflowY:'auto'}}>
         <div style={{padding:'20px 16px',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
-          <button onClick={()=>setSideOpen(false)} style={{background:'none',border:'none',color:'#64748b',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
+          <button onClick={()=>setSideOpen(false)} style={{background:'none',border:'none',color:'#64748b',fontSize:'1.3rem',cursor:'pointer'}}>✕</button>
         </div>
-        {/* Player mini card */}
-        <div style={{padding:'12px 16px',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',gap:10}}>
-          <div style={{fontSize:'1.8rem'}}>{G.player?.av||'🧑‍💻'}</div>
+        <div style={{padding:'14px 16px',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',gap:12}}>
+          <div style={{fontSize:'2rem'}}>{G.player?.av||'🧑‍💻'}</div>
           <div>
-            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'0.8rem',fontWeight:700,color:'#e2e8f0'}}>{G.player?.n||'Hunter'}</div>
-            <div style={{fontSize:10,color:'#64748b',marginTop:2}}>LV.{lv} · 🔥{G.streak} · 🥇{G.gold}</div>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'0.85rem',fontWeight:700,color:'#e2e8f0'}}>{G.player?.n||'Hunter'}</div>
+            <div style={{fontSize:11,color:'#64748b',marginTop:2}}>LV.{lv} · 🔥{G.streak} · 🥇{G.gold}</div>
           </div>
         </div>
-        {/* Nav items */}
         <div style={{flex:1,padding:'8px 0'}}>
           {tabs.map(t=>(
-            <button key={t.id} onClick={()=>navTo(t.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:12,padding:'12px 20px',background:page===t.id?'rgba(124,58,237,0.15)':'none',border:'none',borderLeft:page===t.id?'3px solid #7c3aed':'3px solid transparent',color:page===t.id?'#a855f7':'#94a3b8',cursor:'pointer',textAlign:'left',transition:'all 0.15s'}}>
-              <span style={{fontSize:'1.1rem',width:24,textAlign:'center'}}>{t.icon}</span>
-              <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>{t.label}</span>
+            <button key={t.id} onClick={()=>navTo(t.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:14,padding:'13px 20px',background:page===t.id?'rgba(124,58,237,0.15)':'none',border:'none',borderLeft:page===t.id?'3px solid #7c3aed':'3px solid transparent',color:page===t.id?'#a855f7':'#94a3b8',cursor:'pointer',textAlign:'left',transition:'all 0.15s'}}>
+              <span style={{fontSize:'1.2rem',width:26,textAlign:'center'}}>{t.icon}</span>
+              <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>{t.label}</span>
             </button>
           ))}
         </div>
-        {/* Bottom actions */}
-        <div style={{padding:'12px 16px',borderTop:'1px solid #1e1e35',display:'flex',gap:8}}>
-          <button onClick={()=>{setModal({type:'shop'});setSideOpen(false)}} style={{flex:1,padding:'8px',background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:6,color:'#f59e0b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700}}>🏪 SHOP</button>
-          <button onClick={signOut} style={{padding:'8px 12px',background:'none',border:'1px solid #1e1e35',borderRadius:6,color:'#64748b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700}}>OUT</button>
+        <div style={{padding:'14px 16px',borderTop:'1px solid #1e1e35',display:'flex',gap:8}}>
+          <button onClick={()=>{setModal({type:'shop'});setSideOpen(false)}} style={{flex:1,padding:'10px',background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:6,color:'#f59e0b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:13,fontWeight:700}}>🏪 SHOP</button>
+          {!isPro(G)&&<button onClick={()=>{setShowPro(true);setSideOpen(false)}} style={{flex:1,padding:'10px',background:'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.2))',border:'1px solid #f59e0b',borderRadius:6,color:'#f59e0b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700}}>👑 PRO</button>}
+          <button onClick={signOut} style={{padding:'10px 14px',background:'none',border:'1px solid #1e1e35',borderRadius:6,color:'#64748b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:13,fontWeight:700}}>OUT</button>
         </div>
       </div>
-      {/* TOP NAV BAR */}
       <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',backdropFilter:'blur(10px)'}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 16px'}}>
-          {/* Hamburger */}
-          <button onClick={()=>setSideOpen(true)} style={{background:'none',border:'1px solid #1e1e35',borderRadius:6,color:'#a855f7',padding:'6px 10px',cursor:'pointer',fontSize:'1rem',display:'flex',flexDirection:'column',gap:4,alignItems:'center',justifyContent:'center',width:38,height:38}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 16px'}}>
+          <button onClick={()=>setSideOpen(true)} style={{background:'none',border:'1px solid #1e1e35',borderRadius:6,padding:'6px 8px',cursor:'pointer',display:'flex',flexDirection:'column',gap:4,alignItems:'center',justifyContent:'center',width:38,height:38}}>
             <div style={{width:18,height:2,background:'#a855f7',borderRadius:1}}/>
-            <div style={{width:18,height:2,background:'#a855f7',borderRadius:1}}/>
+            <div style={{width:14,height:2,background:'#a855f7',borderRadius:1}}/>
             <div style={{width:18,height:2,background:'#a855f7',borderRadius:1}}/>
           </button>
-          {/* Logo + current page */}
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
-            <div style={{fontSize:10,color:'#334155',fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textTransform:'uppercase',letterSpacing:1}}>{tabs.find(t=>t.id===page)?.icon} {tabs.find(t=>t.id===page)?.label}</div>
-          </div>
-          {/* Stats */}
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <NavStat val={lv} lbl="LV"/>
             <NavStat val={'🔥'+G.streak} lbl="STR"/>
@@ -1331,6 +1468,25 @@ function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
         </div>
       </nav>
     </>
+  )
+
+  // ── DESKTOP NAV ──
+  return(
+    <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 20px',backdropFilter:'blur(10px)',gap:12}}>
+      <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2,flexShrink:0}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
+      <div style={{display:'flex',gap:3,overflowX:'auto',flexWrap:'wrap'}}>
+        {tabs.map(t=><button key={t.id} onClick={()=>setPage(t.id)} style={{padding:'6px 12px',background:page===t.id?'rgba(124,58,237,0.15)':'none',border:page===t.id?'1px solid #7c3aed':'1px solid transparent',borderRadius:4,color:page===t.id?'#a855f7':'#64748b',fontFamily:"'Rajdhani',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.label}</button>)}
+        <button onClick={()=>setModal({type:'shop'})} style={{padding:'6px 12px',background:'none',border:'1px solid rgba(245,158,11,0.3)',borderRadius:4,color:'#f59e0b',fontFamily:"'Rajdhani',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'}}>🏪 Shop</button>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:14,flexShrink:0}}>
+        <NavStat val={lv} lbl="Level"/>
+        <NavStat val={'🔥'+G.streak} lbl="Streak"/>
+        <NavStat val={G.gold} lbl="Gold" color="#f59e0b"/>
+        {!isPro(G)&&<button onClick={()=>setShowPro(true)} style={{background:'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.2))',border:'1px solid #f59e0b',borderRadius:4,color:'#f59e0b',padding:'4px 10px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>👑 PRO</button>}
+        {isPro(G)&&<span style={{fontSize:10,color:'#f59e0b',fontFamily:"'Orbitron',monospace",fontWeight:700}}>👑 PRO</span>}
+        <button onClick={signOut} style={{background:'none',border:'1px solid #1e1e35',borderRadius:4,color:'#64748b',padding:'4px 8px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif"}}>SIGN OUT</button>
+      </div>
+    </nav>
   )
 }
 function NavStat({val,lbl,color='#f59e0b'}){
@@ -1376,10 +1532,10 @@ function Btn({children,onClick,variant='primary',sm,style={}}){
   return<button onClick={onClick} style={{...base,...(variants[variant]||variants.primary)}}>{children}</button>
 }
 function Inp({placeholder,value,onChange,onKeyDown,type='text',style={}}){
-  return<input type={type} placeholder={placeholder} value={value} onChange={onChange} onKeyDown={onKeyDown} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:500,outline:'none',width:'100%',...style}}/>
+  return<input type={type} placeholder={placeholder} value={value} onChange={onChange} onKeyDown={onKeyDown} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:500,outline:'none',width:'100%',boxSizing:'border-box',maxWidth:'100%',...style}}/>
 }
 function Sel({value,onChange,children,style={}}){
-  return<select value={value} onChange={onChange} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,outline:'none',width:'100%',...style}}>{children}</select>
+  return<select value={value} onChange={onChange} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'8px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:14,outline:'none',width:'100%',boxSizing:'border-box',maxWidth:'100%',...style}}>{children}</select>
 }
 
 // ── MISSION ITEM ───────────────────────────────────────────────────────────
@@ -1398,7 +1554,7 @@ function MissionItem({m,onToggle,onDel,am}){
         <span style={{padding:'2px 8px',borderRadius:2,fontSize:11,fontFamily:"'Share Tech Mono',monospace",background:isS?'rgba(239,68,68,0.12)':'rgba(245,158,11,0.1)',border:`1px solid ${isS?'rgba(239,68,68,0.35)':'rgba(245,158,11,0.3)'}`,color:isS?'#fca5a5':'#f59e0b'}}>+{gain} XP{isS?' (×1.5)':''}</span>
         {m.penalty>0&&!m.done&&<span style={{padding:'2px 8px',borderRadius:2,fontSize:11,fontFamily:"'Share Tech Mono',monospace",background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#ef4444'}}>-{m.penalty}</span>}
       </div>
-      <button onClick={e=>{e.stopPropagation();onDel()}} style={{background:'none',border:'none',color:'#334155',cursor:'pointer',fontSize:13,padding:'2px 4px',marginLeft:2}}>✕</button>
+      <button onPointerDown={e=>{e.stopPropagation();e.preventDefault();onDel()}} style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:4,color:'#ef4444',cursor:'pointer',fontSize:14,padding:'6px 10px',marginLeft:4,minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
     </div>
   )
 }
@@ -1513,12 +1669,98 @@ function Radar({G,W=240,H=210}){
 }
 
 // ── DASHBOARD ──────────────────────────────────────────────────────────────
-function Dashboard({G,lv,rank,title,xpPct,toggleM,setPage,setModal,goalTab,setGoalTab,incGoal,delGoal,toggleX,delX}){
+function Dashboard({G,lv,rank,title,xpPct,toggleM,delM,setPage,setModal,goalTab,setGoalTab,incGoal,delGoal,toggleX,delX,setShowPro}){
   const ms=G.missions,dn=ms.filter(m=>m.done),pct=ms.length?Math.round(dn.length/ms.length*100):0
   const pending=ms.filter(m=>!m.done&&!m.pen&&m.penalty>0)
   const msgs=[`${pct}% of today's missions complete.`,G.streak>0?`${G.streak} day streak active. Keep it.`:'Build your streak. Consistency = power.',`Level ${lv} · Rank ${rank.lbl}`,'THE SYSTEM OBSERVES. Complete your missions.']
   const [msgIdx,setMsgIdx]=useState(0)
+  const [isMobile,setIsMobile]=useState(window.innerWidth<768)
+  useEffect(()=>{const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn)},[])
   useEffect(()=>{const t=setInterval(()=>setMsgIdx(i=>(i+1)%msgs.length),5000);return()=>clearInterval(t)},[G.xp,G.streak])
+
+  // ── MOBILE DASHBOARD ──
+  if(isMobile) return(
+    <div style={{padding:'0 4px'}}>
+      {/* Player Card */}
+      <div style={{background:'#0f0f1a',border:'1px solid #1e1e35',borderRadius:8,padding:16,marginBottom:12,position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:'linear-gradient(90deg,#7c3aed,#06b6d4,#7c3aed)'}}/>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+          <div onClick={()=>setModal({type:'player'})} style={{width:60,height:60,borderRadius:8,background:'linear-gradient(135deg,#1a0a3e,#0a1a3e)',border:'2px solid #7c3aed',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.8rem',cursor:'pointer',flexShrink:0}}>{G.player.av}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:700,color:'#e2e8f0'}}>{G.player.n}</div>
+            <RankBadge rank={rank}/>
+            <div style={{fontSize:11,color:'#a855f7',marginTop:2,fontStyle:'italic'}}>{G.player.t||title.split('—')[0]}</div>
+          </div>
+          <div style={{textAlign:'right',flexShrink:0}}>
+            <div style={{fontSize:10,color:'#64748b'}}>Today</div>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#06b6d4'}}>{pct}%</div>
+          </div>
+        </div>
+        {/* XP Bar */}
+        <div style={{marginBottom:3,display:'flex',justifyContent:'space-between',fontSize:10,color:'#64748b'}}>
+          <span>Level {lv}</span>
+          <span style={{color:'#a855f7',fontFamily:"'Share Tech Mono',monospace"}}>{G.xp}/{getLvXP(lv+1)} XP</span>
+        </div>
+        <div style={{height:6,background:'#13131f',border:'1px solid #1e1e35',borderRadius:3,overflow:'hidden'}}>
+          <div style={{height:'100%',width:`${xpPct}%`,background:'linear-gradient(90deg,#7c3aed,#a855f7)',boxShadow:'0 0 8px #7c3aed',transition:'width 0.8s'}}/>
+        </div>
+        {/* Attr grid — 3 columns so all 6 fit */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginTop:12,paddingTop:12,borderTop:'1px solid #1e1e35'}}>
+          {Object.keys(G.am).map(k=>{
+            const m=G.am[k],v=Math.round((G.attrs[k]||0)*10)/10,p=Math.min(100,G.attrs[k]||0)
+            return<div key={k} onClick={()=>setPage('attributes')} style={{textAlign:'center',padding:'8px 4px',background:'#13131f',border:'1px solid #1e1e35',borderRadius:6,cursor:'pointer'}}>
+              <div style={{fontSize:'1rem'}}>{m.e}</div>
+              <div style={{fontSize:9,fontWeight:700,textTransform:'uppercase',color:'#e2e8f0',marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.n}</div>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:'0.9rem',fontWeight:700,color:m.c}}>{v}</div>
+              <div style={{height:3,background:'#1e1e35',borderRadius:1,marginTop:3,overflow:'hidden'}}><div style={{height:'100%',width:`${p}%`,background:m.c}}/></div>
+            </div>
+          })}
+        </div>
+      </div>
+
+      {/* Streak + Gold row */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:12,background:'#0f0f1a',border:'1px solid #1e1e35',borderRadius:8,textAlign:'center'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.4rem',fontWeight:900,color:'#f59e0b'}}>{G.streak}</div>
+          <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>🔥 Streak</div>
+        </div>
+        <div style={{padding:12,background:'#0f0f1a',border:'1px solid #1e1e35',borderRadius:8,textAlign:'center'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.4rem',fontWeight:900,color:'#a855f7'}}>{G.txp||0}</div>
+          <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>⚡ XP</div>
+        </div>
+        <div onClick={()=>setModal({type:'shop'})} style={{padding:12,background:'#0f0f1a',border:'1px solid rgba(245,158,11,0.3)',borderRadius:8,textAlign:'center',cursor:'pointer'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.4rem',fontWeight:900,color:'#f59e0b'}}>{G.gold}</div>
+          <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>🥇 Gold</div>
+        </div>
+      </div>
+
+      {/* Missions */}
+      <Panel title="Today's Missions" style={{marginBottom:12}} action={<Btn sm onClick={()=>setPage('missions')}>VIEW ALL</Btn>}>
+        {ms.length?ms.slice(0,4).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>delM(m.id)}/>):<div style={{textAlign:'center',padding:12,color:'#334155',fontSize:13}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add</span></div>}
+        {ms.length>4&&<div onClick={()=>setPage('missions')} style={{textAlign:'center',padding:6,fontSize:12,color:'#64748b',cursor:'pointer'}}>+{ms.length-4} more →</div>}
+      </Panel>
+
+      {/* Pending penalties */}
+      {pending.length>0&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:11,color:'#ef4444',padding:10,background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,marginBottom:12}}>⚠ {pending.length} missions · -{pending.reduce((s,m)=>s+m.penalty,0)} XP pending</div>}
+      <Btn variant="danger" onClick={()=>{const ms=G.missions.filter(m=>!m.done&&!m.pen&&m.penalty>0);if(!ms.length){alert('No penalties!');return;}setModal({type:'endday'})}} style={{width:'100%',marginBottom:12}}>⚠ CLOSE DAY</Btn>
+
+      {/* Goals — single column */}
+      <Panel title="Goals" style={{marginBottom:12}} action={<Btn sm onClick={()=>setModal({type:'goal'})}>+ ADD</Btn>}>
+        <div style={{fontSize:11,textTransform:'uppercase',letterSpacing:1,color:'#06b6d4',marginBottom:8}}>Short-Term</div>
+        <GoalList goals={G.goals} type="short" incGoal={incGoal} delGoal={delGoal}/>
+        <div style={{height:1,background:'#1e1e35',margin:'10px 0'}}/>
+        <div style={{fontSize:11,textTransform:'uppercase',letterSpacing:1,color:'#a855f7',marginBottom:8}}>Long-Term</div>
+        <GoalList goals={G.goals} type="long" incGoal={incGoal} delGoal={delGoal}/>
+      </Panel>
+
+      {/* Week mini */}
+      <Panel title="This Week" style={{marginBottom:12}}>
+        <WeekGrid G={G}/>
+      </Panel>
+    </div>
+  )
+
+  // ── DESKTOP DASHBOARD (unchanged) ──
   return(
     <div>
       {/* PLAYER CARD */}
@@ -1565,7 +1807,7 @@ function Dashboard({G,lv,rank,title,xpPct,toggleM,setPage,setModal,goalTab,setGo
       {/* MAIN GRID */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 320px',gap:16,marginBottom:20}}>
         <Panel title="Today's Missions" action={<div style={{display:'flex',gap:6,alignItems:'center'}}><span style={{fontSize:11,color:'#64748b',fontFamily:"'Share Tech Mono',monospace"}}>{dn.length}/{ms.length}</span><Btn sm onClick={()=>setPage('missions')}>VIEW ALL</Btn></div>}>
-          {ms.length?ms.slice(0,5).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>{}}/>):<div style={{textAlign:'center',padding:16,color:'#334155',fontSize:13,fontStyle:'italic'}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add some</span></div>}
+          {ms.length?ms.slice(0,5).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>delM(m.id)}/>):<div style={{textAlign:'center',padding:16,color:'#334155',fontSize:13,fontStyle:'italic'}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add some</span></div>}
           {ms.length>5&&<div onClick={()=>setPage('missions')} style={{textAlign:'center',padding:8,fontSize:12,color:'#64748b',cursor:'pointer'}}>+{ms.length-5} more →</div>}
         </Panel>
         <Panel title="This Week" action={<span style={{fontSize:10,color:'#64748b'}}/>}>
@@ -1663,6 +1905,49 @@ function Weekly({G,goalTab,setGoalTab,incGoal,delGoal,toggleX,addX,delX,setModal
   const wms=G.missions,wd=wms.filter(m=>m.done)
   const wp=wms.length?Math.round(wd.length/wms.length*100):0
   const pdays=Array.from({length:7},(_,i)=>{const d=new Date(ws);d.setDate(ws.getDate()+i);const h=G.history[localDS(d)];return h&&h.pct>=1?1:0}).reduce((a,b)=>a+b,0)
+  const [isMobile,setIsMobile]=useState(window.innerWidth<768)
+  useEffect(()=>{const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn)},[])
+
+  const statsRow = (
+    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:isMobile?8:10,marginBottom:16}}>
+      {[{v:G.streak+'🔥',l:'Streak',c:'#f59e0b'},{v:wp+'%',l:'Week',c:'#06b6d4'},{v:pdays,l:'Perfect',c:'#10b981'},{v:G.best,l:'Best',c:'#a855f7'}].map((s,i)=>(
+        <div key={i} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:6,padding:12,textAlign:'center'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:isMobile?'1.1rem':'1.3rem',fontWeight:700,color:s.c}}>{s.v}</div>
+          <div style={{fontSize:9,textTransform:'uppercase',letterSpacing:1.5,color:'#64748b',marginTop:2}}>{s.l}</div>
+        </div>
+      ))}
+    </div>
+  )
+
+  if(isMobile) return(
+    <div style={{padding:'0 4px'}}>
+      {statsRow}
+      <Panel title="This Week" style={{marginBottom:12}}>
+        <WeekGrid G={G}/>
+        <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:2,color:'#64748b',margin:'12px 0 4px'}}>Bar Chart</div>
+        <BigBars G={G}/>
+      </Panel>
+      <Panel title="Attribute Growth" style={{marginBottom:12}}>
+        {Object.keys(G.am).map(k=>{
+          const m=G.am[k],v=Math.round((G.attrs[k]||0)*10)/10,p=Math.min(100,G.attrs[k]||0)
+          return<div key={k} style={{marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}><span style={{fontSize:12,color:'#e2e8f0'}}>{m.e} {m.n}</span><span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:12,color:m.c}}>{v}</span></div>
+            <div style={{height:6,background:'#1e1e35',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',width:`${p}%`,background:m.c,borderRadius:3,boxShadow:`0 0 6px ${m.c}`,transition:'width 0.8s'}}/></div>
+          </div>
+        })}
+      </Panel>
+      <Panel title="Goals" style={{marginBottom:12}} action={<Btn sm onClick={()=>setModal({type:'goal'})}>+ ADD</Btn>}>
+        <div style={{display:'flex',gap:4,marginBottom:12,borderBottom:'1px solid #1e1e35',paddingBottom:8}}>
+          {['short','long'].map((t)=><button key={t} onClick={()=>setGoalTab(p=>({...p,w:t}))} style={{padding:'4px 12px',background:goalTab.w===t?'rgba(124,58,237,0.15)':'none',border:goalTab.w===t?'1px solid #7c3aed':'1px solid transparent',borderRadius:4,color:goalTab.w===t?'#a855f7':'#64748b',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>{t==='short'?'Short':'Long'}</button>)}
+        </div>
+        <GoalList goals={G.goals} type={goalTab.w} incGoal={incGoal} delGoal={delGoal}/>
+      </Panel>
+      <Panel title="Bonus Tasks">
+        <ExtraList extras={G.extras} toggleX={toggleX} delX={delX} addX={addX}/>
+      </Panel>
+    </div>
+  )
+
   return(
     <div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
@@ -1682,9 +1967,22 @@ function Weekly({G,goalTab,setGoalTab,incGoal,delGoal,toggleX,addX,delX,setModal
         <Panel title="Attribute Growth">
           {Object.keys(G.am).map(k=>{
             const m=G.am[k],v=Math.round((G.attrs[k]||0)*10)/10,p=Math.min(100,G.attrs[k]||0)
-            return<div key={k} style={{marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}><span style={{fontSize:11,color:'#e2e8f0'}}>{m.e} {m.n}</span><span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:11,color:m.c}}>{v}</span></div>
-              <div style={{height:6,background:'#1e1e35',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',width:`${p}%`,background:m.c,borderRadius:3,boxShadow:`0 0 6px ${m.c}`,transition:'width 0.8s'}}/></div>
+            return<div key={k} style={{marginBottom:16,padding:'12px 14px',background:'#13131f',border:'1px solid #1e1e35',borderRadius:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:'1.4rem'}}>{m.e}</span>
+                  <span style={{fontSize:14,fontWeight:700,color:'#e2e8f0',textTransform:'uppercase',letterSpacing:1}}>{m.n}</span>
+                </div>
+                <span style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:700,color:m.c}}>{v}</span>
+              </div>
+              <div style={{height:12,background:'#1e1e35',borderRadius:6,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${p}%`,background:`linear-gradient(90deg,${m.c}99,${m.c})`,borderRadius:6,boxShadow:`0 0 10px ${m.c}`,transition:'width 0.8s'}}/>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:9,color:'#334155'}}>
+                <span>0</span>
+                <span style={{color:m.c,fontSize:10}}>{Math.round(p)}%</span>
+                <span>100</span>
+              </div>
             </div>
           })}
         </Panel>
@@ -1781,8 +2079,9 @@ function Attributes({G,updAM}){
 // ── MODAL HOST ─────────────────────────────────────────────────────────────
 function ModalHost({modal,setModal,G,addM,addGoal,addX,updPlayer,buyShop,addShopItem,delShopItem,endDay}){
   const close=()=>setModal(null)
-  const overlay={position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:9990,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}
-  const card={background:'#0f0f1a',border:'1px solid #7c3aed',borderRadius:8,padding:28,width:'90%',maxWidth:480,boxShadow:'0 0 40px rgba(124,58,237,0.3)',maxHeight:'90vh',overflowY:'auto'}
+  const overlay={position:'fixed',top:0,left:0,width:'100%',height:'100%',background:'rgba(0,0,0,0.85)',zIndex:9990,display:'grid',placeItems:'center',backdropFilter:'blur(4px)',padding:'16px',boxSizing:'border-box'}
+  const isMobileModal=window.innerWidth<768
+  const card={background:'#0f0f1a',border:'1px solid #7c3aed',borderRadius:8,padding:isMobileModal?14:28,width:'100%',maxWidth:480,boxShadow:'0 0 40px rgba(124,58,237,0.3)',maxHeight:'80vh',overflowY:'auto',boxSizing:'border-box',overflowX:'hidden',position:'relative'}
   const mh2={fontFamily:"'Orbitron',monospace",fontSize:'0.95rem',color:'#a855f7',marginBottom:20,textTransform:'uppercase',letterSpacing:2}
   const row={marginBottom:14}
   const lbl={fontSize:11,textTransform:'uppercase',letterSpacing:1.5,color:'#64748b',marginBottom:6,display:'block'}
