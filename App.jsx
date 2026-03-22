@@ -851,36 +851,37 @@ function ChallengePage({G, session, notif}) {
 
   const vote = async (challengeId) => {
     if (hasVoted) return
-    setHasVoted(true) // immediately block UI so double-click impossible
 
-    // Check DB if already voted on ANY challenge this week (double safety)
     const weekId = getWeekId()
-    const { data: existing } = await supabase.from('challenge_votes')
-      .select('id').eq('user_id', session.user.id).eq('week_id', weekId).single()
 
-    if (existing) {
-      notif('Already voted this week!', 'penalty')
-      return
-    }
-
-    // Record vote in separate votes table (primary key prevents duplicates)
-    const { error } = await supabase.from('challenge_votes').insert({
+    // Try insert into votes table first
+    const { error: voteError } = await supabase.from('challenge_votes').insert({
       user_id: session.user.id,
       challenge_id: challengeId,
       week_id: weekId
     })
 
-    if (error) {
-      // Already voted (unique constraint hit)
+    if (voteError) {
       notif('Already voted this week!', 'penalty')
+      setHasVoted(true)
       return
     }
 
-    // Increment vote count directly
-    const { data: cur } = await supabase.from('challenges').select('vote_count').eq('id', challengeId).single()
-    await supabase.from('challenges').update({ vote_count: (cur?.vote_count||0) + 1 }).eq('id', challengeId)
+    // Vote recorded — now increment count
+    const { data: cur, error: fetchErr } = await supabase
+      .from('challenges').select('vote_count').eq('id', challengeId).single()
+
+    const newCount = (cur?.vote_count || 0) + 1
+    await supabase.from('challenges')
+      .update({ vote_count: newCount })
+      .eq('id', challengeId)
+
+    setHasVoted(true)
     notif('✅ Vote cast!', 'xp')
-    loadChallenge()
+    // Update UI immediately without reloading
+    setCandidates(prev => prev.map(c =>
+      c.id === challengeId ? {...c, vote_count: newCount} : c
+    ))
   }
 
   const joinChallenge = async () => {
