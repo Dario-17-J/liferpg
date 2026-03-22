@@ -497,7 +497,7 @@ function LeaderboardPage({session}) {
 
 
 
-// ── PHASE 3: FRIENDS SYSTEM ────────────────────────────────────────────────
+// ── PHASE 3: FRIENDS SYSTEM ──────────────────────────────────────────────── v3.2 build:1774161123
 function FriendsPage({G, session}) {
   const [friends, setFriends] = useState([])
   const [requests, setRequests] = useState([])
@@ -1273,30 +1273,64 @@ function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
     {id:'analytics',icon:'📈',label:'Analytics'},
     {id:'challenge',icon:'🎯',label:'Challenge'},
   ]
+  const [sideOpen,setSideOpen]=useState(false)
+  const navTo=(id)=>{setPage(id);setSideOpen(false);}
   return(
-    <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',backdropFilter:'blur(10px)'}}>
-      {/* Top row */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 20px',borderBottom:'1px solid #1e1e35'}}>
-        <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
-        <div style={{display:'flex',alignItems:'center',gap:14}}>
-          <NavStat val={lv} lbl="Level"/>
-          <NavStat val={'🔥'+G.streak} lbl="Streak"/>
-          <NavStat val={G.gold} lbl="Gold" color="#f59e0b"/>
-          <button onClick={()=>setModal({type:'shop'})} style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:4,color:'#f59e0b',padding:'4px 10px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>🏪</button>
-          <button onClick={signOut} style={{background:'none',border:'1px solid #1e1e35',borderRadius:4,color:'#64748b',padding:'4px 8px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif"}}>OUT</button>
+    <>
+      {/* SIDEBAR OVERLAY */}
+      {sideOpen&&<div onClick={()=>setSideOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:998,backdropFilter:'blur(2px)'}}/>}
+      {/* SIDEBAR */}
+      <div style={{position:'fixed',top:0,left:sideOpen?0:'-260px',width:250,height:'100vh',background:'#0a0a0f',borderRight:'1px solid #1e1e35',zIndex:999,transition:'left 0.3s cubic-bezier(0.4,0,0.2,1)',display:'flex',flexDirection:'column',overflowY:'auto'}}>
+        <div style={{padding:'20px 16px',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
+          <button onClick={()=>setSideOpen(false)} style={{background:'none',border:'none',color:'#64748b',fontSize:'1.2rem',cursor:'pointer'}}>✕</button>
+        </div>
+        {/* Player mini card */}
+        <div style={{padding:'12px 16px',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',gap:10}}>
+          <div style={{fontSize:'1.8rem'}}>{G.player?.av||'🧑‍💻'}</div>
+          <div>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'0.8rem',fontWeight:700,color:'#e2e8f0'}}>{G.player?.n||'Hunter'}</div>
+            <div style={{fontSize:10,color:'#64748b',marginTop:2}}>LV.{lv} · 🔥{G.streak} · 🥇{G.gold}</div>
+          </div>
+        </div>
+        {/* Nav items */}
+        <div style={{flex:1,padding:'8px 0'}}>
+          {tabs.map(t=>(
+            <button key={t.id} onClick={()=>navTo(t.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:12,padding:'12px 20px',background:page===t.id?'rgba(124,58,237,0.15)':'none',border:'none',borderLeft:page===t.id?'3px solid #7c3aed':'3px solid transparent',color:page===t.id?'#a855f7':'#94a3b8',cursor:'pointer',textAlign:'left',transition:'all 0.15s'}}>
+              <span style={{fontSize:'1.1rem',width:24,textAlign:'center'}}>{t.icon}</span>
+              <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>{t.label}</span>
+            </button>
+          ))}
+        </div>
+        {/* Bottom actions */}
+        <div style={{padding:'12px 16px',borderTop:'1px solid #1e1e35',display:'flex',gap:8}}>
+          <button onClick={()=>{setModal({type:'shop'});setSideOpen(false)}} style={{flex:1,padding:'8px',background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:6,color:'#f59e0b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700}}>🏪 SHOP</button>
+          <button onClick={signOut} style={{padding:'8px 12px',background:'none',border:'1px solid #1e1e35',borderRadius:6,color:'#64748b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700}}>OUT</button>
         </div>
       </div>
-      {/* Bottom row - icon tabs */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-around',padding:'4px 8px'}}>
-        {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setPage(t.id)} title={t.label} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1,padding:'4px 6px',background:page===t.id?'rgba(124,58,237,0.15)':'none',border:'none',borderRadius:4,color:page===t.id?'#a855f7':'#64748b',cursor:'pointer',minWidth:36,position:'relative'}}>
-            <span style={{fontSize:'1rem',lineHeight:1}}>{t.icon}</span>
-            <span style={{fontSize:8,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',whiteSpace:'nowrap'}}>{t.label}</span>
-            {page===t.id&&<div style={{position:'absolute',bottom:-4,left:'50%',transform:'translateX(-50%)',width:20,height:2,background:'#7c3aed',borderRadius:1}}/>}
+      {/* TOP NAV BAR */}
+      <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',backdropFilter:'blur(10px)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 16px'}}>
+          {/* Hamburger */}
+          <button onClick={()=>setSideOpen(true)} style={{background:'none',border:'1px solid #1e1e35',borderRadius:6,color:'#a855f7',padding:'6px 10px',cursor:'pointer',fontSize:'1rem',display:'flex',flexDirection:'column',gap:4,alignItems:'center',justifyContent:'center',width:38,height:38}}>
+            <div style={{width:18,height:2,background:'#a855f7',borderRadius:1}}/>
+            <div style={{width:18,height:2,background:'#a855f7',borderRadius:1}}/>
+            <div style={{width:18,height:2,background:'#a855f7',borderRadius:1}}/>
           </button>
-        ))}
-      </div>
-    </nav>
+          {/* Logo + current page */}
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
+            <div style={{fontSize:10,color:'#334155',fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textTransform:'uppercase',letterSpacing:1}}>{tabs.find(t=>t.id===page)?.icon} {tabs.find(t=>t.id===page)?.label}</div>
+          </div>
+          {/* Stats */}
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <NavStat val={lv} lbl="LV"/>
+            <NavStat val={'🔥'+G.streak} lbl="STR"/>
+            <NavStat val={G.gold} lbl="GOLD" color="#f59e0b"/>
+          </div>
+        </div>
+      </nav>
+    </>
   )
 }
 function NavStat({val,lbl,color='#f59e0b'}){
