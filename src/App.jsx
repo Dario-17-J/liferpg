@@ -478,7 +478,7 @@ function LeaderboardPage({session}) {
               <div style={{fontFamily:"'Orbitron',monospace", fontSize:i<3?'1.2rem':'0.8rem', minWidth:32, textAlign:'center', color:i<3?undefined:'#64748b'}}>{medal}</div>
               <div style={{fontSize:'1.3rem'}}>{u.avatar||'🧑‍💻'}</div>
               <div style={{flex:1}}>
-                <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{u.username||'Hunter'}{isMe?' (You)':''}</div>
+                <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{u.username||'Hunter'}{isMe?' (You)':''}{u.is_pro?' 👑':''}</div>
                 <div style={{fontSize:10, color:'#64748b'}}>{u.rank_label||'DORMANT I'}</div>
               </div>
               <div style={{textAlign:'right'}}>
@@ -495,6 +495,428 @@ function LeaderboardPage({session}) {
   )
 }
 
+
+
+// ── PHASE 3: FRIENDS SYSTEM ────────────────────────────────────────────────
+function FriendsPage({G, session}) {
+  const [friends, setFriends] = useState([])
+  const [requests, setRequests] = useState([])
+  const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [myCode] = useState(session?.user?.id?.slice(0,8).toUpperCase() || '')
+  const [codeInput, setCodeInput] = useState('')
+  const [tab, setTab] = useState('friends')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { loadFriends() }, [])
+
+  const loadFriends = async () => {
+    setLoading(true)
+    // Get accepted friends
+    const { data: sent } = await supabase.from('friends')
+      .select('friend_id, status').eq('user_id', session.user.id)
+    const { data: recv } = await supabase.from('friends')
+      .select('user_id, status').eq('friend_id', session.user.id)
+
+    const acceptedIds = [
+      ...(sent?.filter(f=>f.status==='accepted').map(f=>f.friend_id)||[]),
+      ...(recv?.filter(f=>f.status==='accepted').map(f=>f.user_id)||[])
+    ]
+    const pendingRecv = recv?.filter(f=>f.status==='pending').map(f=>f.user_id)||[]
+
+    if (acceptedIds.length) {
+      const { data: profiles } = await supabase.from('profiles')
+        .select('*').in('id', acceptedIds)
+      setFriends(profiles||[])
+    }
+    if (pendingRecv.length) {
+      const { data: profiles } = await supabase.from('profiles')
+        .select('*').in('id', pendingRecv)
+      setRequests(profiles||[])
+    }
+    setLoading(false)
+  }
+
+  const searchUsers = async () => {
+    if (!search.trim()) return
+    setSearching(true)
+    const { data } = await supabase.from('profiles')
+      .select('*').ilike('username', `%${search}%`).neq('id', session.user.id).limit(10)
+    setSearchResults(data||[])
+    setSearching(false)
+  }
+
+  const addByCode = async () => {
+    const code = codeInput.trim().toUpperCase()
+    if (!code) return
+    // Find user whose id starts with code
+    const { data } = await supabase.from('profiles')
+      .select('*').neq('id', session.user.id)
+    const found = data?.find(u => u.id.slice(0,8).toUpperCase() === code)
+    if (!found) { alert('User not found!'); return }
+    await sendRequest(found.id)
+    setCodeInput('')
+  }
+
+  const sendRequest = async (friendId) => {
+    await supabase.from('friends').upsert({
+      user_id: session.user.id, friend_id: friendId, status: 'pending'
+    }, {onConflict: 'user_id,friend_id'})
+    alert('Friend request sent!')
+    setSearchResults([])
+    setSearch('')
+  }
+
+  const acceptRequest = async (userId) => {
+    await supabase.from('friends').upsert({
+      user_id: session.user.id, friend_id: userId, status: 'accepted'
+    }, {onConflict: 'user_id,friend_id'})
+    await supabase.from('friends').update({status:'accepted'})
+      .eq('user_id', userId).eq('friend_id', session.user.id)
+    loadFriends()
+  }
+
+  const getRankForUser = (u) => {
+    const lv = u.level||0
+    let tier = RANK_TIERS[0]
+    for (const t of RANK_TIERS) { if (lv>=t.min) tier=t }
+    return { icon: RANK_ICONS[tier.lbl]||'⚡', lbl: u.rank_label||'DORMANT I' }
+  }
+
+  return (
+    <div style={{maxWidth:680, margin:'0 auto'}}>
+      {/* My Friend Code */}
+      <Panel title="Your Friend Code" style={{marginBottom:16}}>
+        <div style={{display:'flex', alignItems:'center', gap:12, padding:16, background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.2)', borderRadius:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:1, marginBottom:4}}>Share this code with friends</div>
+            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.8rem', fontWeight:900, color:'#a855f7', letterSpacing:4}}>{myCode}</div>
+          </div>
+          <button onClick={()=>{navigator.clipboard.writeText(myCode); alert('Code copied!')}} style={{padding:'10px 16px', background:'rgba(124,58,237,0.2)', border:'1px solid #7c3aed', borderRadius:6, color:'#a855f7', cursor:'pointer', fontFamily:"'Rajdhani',sans-serif", fontWeight:700, fontSize:12}}>COPY</button>
+        </div>
+        {/* Add by code */}
+        <div style={{display:'flex', gap:8, marginTop:12}}>
+          <input value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase())} placeholder="Enter friend code..." style={{flex:1, background:'#13131f', border:'1px solid #1e1e35', borderRadius:4, padding:'8px 12px', color:'#e2e8f0', fontFamily:"'Orbitron',monospace", fontSize:14, outline:'none', letterSpacing:2}} maxLength={8}/>
+          <Btn onClick={addByCode}>ADD</Btn>
+        </div>
+      </Panel>
+
+      {/* Search */}
+      <Panel title="Find by Username" style={{marginBottom:16}}>
+        <div style={{display:'flex', gap:8, marginBottom:12}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchUsers()} placeholder="Search username..." style={{flex:1, background:'#13131f', border:'1px solid #1e1e35', borderRadius:4, padding:'8px 12px', color:'#e2e8f0', fontFamily:"'Rajdhani',sans-serif", fontSize:14, outline:'none'}}/>
+          <Btn onClick={searchUsers}>{searching?'...':'SEARCH'}</Btn>
+        </div>
+        {searchResults.map(u => {
+          const r = getRankForUser(u)
+          return <div key={u.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'#13131f', border:'1px solid #1e1e35', borderRadius:6, marginBottom:8}}>
+            <div style={{fontSize:'1.3rem'}}>{u.avatar||'🧑‍💻'}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{u.username}</div>
+              <div style={{fontSize:10, color:'#64748b'}}>{r.icon} {r.lbl} · LV.{u.level||0}</div>
+            </div>
+            <Btn sm onClick={()=>sendRequest(u.id)}>ADD</Btn>
+          </div>
+        })}
+      </Panel>
+
+      {/* Friend Requests */}
+      {requests.length > 0 && (
+        <Panel title={`Friend Requests (${requests.length})`} style={{marginBottom:16}}>
+          {requests.map(u => (
+            <div key={u.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'#13131f', border:'1px solid rgba(245,158,11,0.3)', borderRadius:6, marginBottom:8}}>
+              <div style={{fontSize:'1.3rem'}}>{u.avatar||'🧑‍💻'}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{u.username}</div>
+                <div style={{fontSize:10, color:'#64748b'}}>LV.{u.level||0} · {u.streak||0}🔥 streak</div>
+              </div>
+              <Btn sm onClick={()=>acceptRequest(u.id)}>ACCEPT</Btn>
+            </div>
+          ))}
+        </Panel>
+      )}
+
+      {/* Friends List */}
+      <Panel title={`Friends (${friends.length})`}>
+        {loading && <div style={{textAlign:'center', padding:20, color:'#334155'}}>Loading...</div>}
+        {!loading && !friends.length && (
+          <div style={{textAlign:'center', padding:32}}>
+            <div style={{fontSize:'2rem', marginBottom:8}}>👥</div>
+            <div style={{color:'#334155', fontSize:13}}>No friends yet. Share your code!</div>
+          </div>
+        )}
+        {friends.map((u,i) => {
+          const r = getRankForUser(u)
+          return (
+            <div key={u.id} style={{display:'flex', alignItems:'center', gap:12, padding:'12px', background:'#13131f', border:'1px solid #1e1e35', borderRadius:6, marginBottom:8}}>
+              <div style={{fontFamily:"'Orbitron',monospace", fontSize:'0.8rem', color:'#64748b', minWidth:20}}>#{i+1}</div>
+              <div style={{fontSize:'1.4rem'}}>{u.avatar||'🧑‍💻'}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{u.username}</div>
+                <div style={{fontSize:10, color:'#64748b'}}>{r.icon} {r.lbl}</div>
+              </div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, textAlign:'center'}}>
+                <div><div style={{fontFamily:"'Orbitron',monospace", fontSize:'0.85rem', fontWeight:700, color:'#a855f7'}}>{u.xp||0}</div><div style={{fontSize:9, color:'#64748b'}}>XP</div></div>
+                <div><div style={{fontFamily:"'Orbitron',monospace", fontSize:'0.85rem', fontWeight:700, color:'#f97316'}}>{u.streak||0}🔥</div><div style={{fontSize:9, color:'#64748b'}}>Streak</div></div>
+                <div><div style={{fontFamily:"'Orbitron',monospace", fontSize:'0.85rem', fontWeight:700, color:'#06b6d4'}}>LV.{u.level||0}</div><div style={{fontSize:9, color:'#64748b'}}>Level</div></div>
+              </div>
+            </div>
+          )
+        })}
+      </Panel>
+    </div>
+  )
+}
+
+// ── PHASE 3: ANALYTICS PAGE ────────────────────────────────────────────────
+function AnalyticsPage({G}) {
+  const history = G.history || {}
+  const missions = G.missions || []
+  const lv = getLv(G.xp)
+
+  // Last 30 days data
+  const last30 = Array.from({length:30}, (_,i) => {
+    const d = new Date(); d.setDate(d.getDate()-i)
+    const ds = localDS(d)
+    const h = history[ds]
+    return { ds, date: d, pct: h?.pct||0, xp: h?.xp||0, done: h?.d||0, total: h?.m||0 }
+  }).reverse()
+
+  // Day of week analysis
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+  const dayStats = dayNames.map((name,i) => {
+    const days = last30.filter(d => d.date.getDay()===i && d.total>0)
+    const avg = days.length ? days.reduce((s,d)=>s+d.pct,0)/days.length : 0
+    return { name, avg, count: days.length }
+  })
+
+  // Best and worst
+  const activeDays = last30.filter(d => d.total>0)
+  const avgCompletion = activeDays.length ? Math.round(activeDays.reduce((s,d)=>s+d.pct,0)/activeDays.length*100) : 0
+  const perfectDays = activeDays.filter(d => d.pct>=1).length
+  const missedDays = last30.filter(d => d.total>0 && d.pct<0.5).length
+  const bestDay = dayStats.reduce((best,d) => d.avg>best.avg?d:best, dayStats[0])
+
+  // Mission completion rates
+  const missionStats = missions.map(m => ({
+    name: m.n,
+    tier: m.tier,
+    done: m.done ? 1 : 0
+  }))
+
+  return (
+    <div style={{maxWidth:900, margin:'0 auto'}}>
+      {/* Summary Stats */}
+      <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16}}>
+        {[
+          {v:`${avgCompletion}%`, l:'Avg Completion', c:'#a855f7'},
+          {v:perfectDays, l:'Perfect Days', c:'#10b981'},
+          {v:missedDays, l:'Missed Days', c:'#ef4444'},
+          {v:bestDay?.name||'-', l:'Best Day', c:'#f59e0b'},
+        ].map((s,i) => (
+          <div key={i} style={{background:'#0f0f1a', border:'1px solid #1e1e35', borderRadius:8, padding:16, textAlign:'center'}}>
+            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:s.c}}>{s.v}</div>
+            <div style={{fontSize:9, textTransform:'uppercase', letterSpacing:1.5, color:'#64748b', marginTop:4}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16}}>
+        {/* 30 Day Chart */}
+        <Panel title="30-Day Completion">
+          <div style={{display:'flex', alignItems:'flex-end', gap:3, height:120, marginBottom:8}}>
+            {last30.map((d,i) => {
+              const p = d.pct
+              const ht = Math.max(3, p*110)
+              const col = d.ds===localDS(new Date())?'#a855f7':p>=1?'#10b981':p>=0.5?'#f59e0b':p>0?'#ef4444':'#1e1e35'
+              return <div key={i} style={{flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-end'}}>
+                <div style={{width:'100%', height:ht, background:col, borderRadius:'2px 2px 0 0', minHeight:3}}/>
+              </div>
+            })}
+          </div>
+          <div style={{display:'flex', justifyContent:'space-between', fontSize:9, color:'#334155'}}>
+            <span>30 days ago</span><span>Today</span>
+          </div>
+        </Panel>
+
+        {/* Day of Week */}
+        <Panel title="Best Days of Week">
+          {dayStats.map((d,i) => (
+            <div key={i} style={{display:'flex', alignItems:'center', gap:10, marginBottom:8}}>
+              <div style={{fontSize:11, color:'#64748b', width:28, fontFamily:"'Share Tech Mono',monospace"}}>{d.name}</div>
+              <div style={{flex:1, height:8, background:'#13131f', borderRadius:4, overflow:'hidden'}}>
+                <div style={{height:'100%', width:`${Math.round(d.avg*100)}%`, background:d.avg>=0.8?'#10b981':d.avg>=0.5?'#f59e0b':'#ef4444', borderRadius:4, transition:'width 0.8s'}}/>
+              </div>
+              <div style={{fontSize:10, color:'#64748b', width:32, textAlign:'right', fontFamily:"'Share Tech Mono',monospace"}}>{Math.round(d.avg*100)}%</div>
+            </div>
+          ))}
+        </Panel>
+      </div>
+
+      {/* Attribute Growth */}
+      <Panel title="Attribute Progress">
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+          {Object.keys(G.am).map(k => {
+            const m = G.am[k]
+            const v = Math.round((G.attrs[k]||0)*10)/10
+            const p = Math.min(100, G.attrs[k]||0)
+            return (
+              <div key={k} style={{padding:12, background:'#13131f', border:'1px solid #1e1e35', borderRadius:6}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <span>{m.e}</span>
+                    <span style={{fontSize:12, fontWeight:700, color:'#e2e8f0'}}>{m.n}</span>
+                  </div>
+                  <span style={{fontFamily:"'Orbitron',monospace", fontSize:'0.9rem', fontWeight:700, color:m.c}}>{v}</span>
+                </div>
+                <div style={{height:6, background:'#1e1e35', borderRadius:3, overflow:'hidden'}}>
+                  <div style={{height:'100%', width:`${p}%`, background:m.c, borderRadius:3, boxShadow:`0 0 6px ${m.c}`, transition:'width 0.8s'}}/>
+                </div>
+                <div style={{fontSize:9, color:'#334155', marginTop:4}}>{G.missions.filter(x=>x.cat===k).length} missions linked</div>
+              </div>
+            )
+          })}
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+// ── PHASE 3: WEEKLY CHALLENGE ──────────────────────────────────────────────
+function ChallengePage({G, session, notif}) {
+  const [challenge, setChallenge] = useState(null)
+  const [candidates, setCandidates] = useState([])
+  const [hasVoted, setHasVoted] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [participants, setParticipants] = useState(0)
+
+  const CHALLENGE_IDEAS = [
+    {title:'7-Day Streak Challenge', desc:'Maintain a 7-day streak this week. Complete at least 50% of missions every day.', icon:'🔥', xpReward:300},
+    {title:'Perfect Monday', desc:'Complete 100% of your missions on Monday. No excuses.', icon:'💯', xpReward:150},
+    {title:'S-Tier Domination', desc:'Complete all your S-Tier missions every day this week.', icon:'⚔️', xpReward:400},
+    {title:'Discipline Week', desc:'Complete all Discipline-linked missions for 5 days straight.', icon:'⚡', xpReward:250},
+    {title:'No-Skip Week', desc:'Do not skip a single mission this entire week.', icon:'🛡', xpReward:500},
+    {title:'Gold Rush', desc:'Earn 200+ gold this week from mission completions.', icon:'🥇', xpReward:200},
+  ]
+
+  useEffect(() => { loadChallenge() }, [])
+
+  const getWeekId = () => {
+    const now = new Date()
+    const start = new Date(now)
+    start.setDate(now.getDate() - now.getDay())
+    return localDS(start)
+  }
+
+  const loadChallenge = async () => {
+    setLoading(true)
+    const weekId = getWeekId()
+
+    // Check if this week has an active challenge
+    const { data: active } = await supabase.from('challenges')
+      .select('*').eq('week_id', weekId).eq('status', 'active').single()
+
+    if (active) {
+      setChallenge(active)
+      // Count participants
+      const { count } = await supabase.from('challenge_entries')
+        .select('*', {count:'exact'}).eq('challenge_id', active.id)
+      setParticipants(count||0)
+    } else {
+      // Show voting - pick 4 random candidates
+      const { data: voting } = await supabase.from('challenges')
+        .select('*').eq('week_id', weekId).eq('status', 'voting')
+
+      if (voting?.length) {
+        setCandidates(voting)
+        // Check if user voted
+        const myVote = voting.find(c => c.votes?.includes(session.user.id))
+        if (myVote) setHasVoted(true)
+      } else {
+        // Generate new candidates for this week
+        const shuffled = [...CHALLENGE_IDEAS].sort(()=>Math.random()-0.5).slice(0,4)
+        const toInsert = shuffled.map(c => ({
+          week_id: weekId, status: 'voting',
+          title: c.title, description: c.desc, icon: c.icon,
+          xp_reward: c.xpReward, votes: [], vote_count: 0
+        }))
+        const { data: inserted } = await supabase.from('challenges').insert(toInsert).select()
+        setCandidates(inserted||[])
+      }
+    }
+    setLoading(false)
+  }
+
+  const vote = async (challengeId) => {
+    if (hasVoted) return
+    await supabase.from('challenges').update({
+      votes: supabase.sql`array_append(votes, ${session.user.id})`,
+      vote_count: supabase.sql`vote_count + 1`
+    }).eq('id', challengeId)
+    setHasVoted(true)
+    notif('✅ Vote cast!', 'xp')
+    loadChallenge()
+  }
+
+  const joinChallenge = async () => {
+    if (!challenge) return
+    await supabase.from('challenge_entries').upsert({
+      challenge_id: challenge.id, user_id: session.user.id,
+      username: G.player?.n||'Hunter', avatar: G.player?.av||'🧑‍💻',
+      joined_at: new Date().toISOString(), completed: false
+    }, {onConflict: 'challenge_id,user_id'})
+    setParticipants(p => p+1)
+    notif('⚔️ Joined the challenge!', 'levelup')
+  }
+
+  return (
+    <div style={{maxWidth:680, margin:'0 auto'}}>
+      {loading && <div style={{textAlign:'center', padding:60, color:'#334155', fontFamily:"'Share Tech Mono',monospace"}}>Loading challenge...</div>}
+
+      {!loading && challenge && (
+        <Panel title="This Week's Challenge">
+          <div style={{textAlign:'center', padding:24, background:`rgba(124,58,237,0.06)`, border:'1px solid rgba(124,58,237,0.2)', borderRadius:8, marginBottom:16}}>
+            <div style={{fontSize:'3rem', marginBottom:8}}>{challenge.icon}</div>
+            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.2rem', fontWeight:700, color:'#e2e8f0', marginBottom:8}}>{challenge.title}</div>
+            <div style={{fontSize:13, color:'#94a3b8', marginBottom:16, lineHeight:1.7}}>{challenge.description}</div>
+            <div style={{display:'flex', justifyContent:'center', gap:24, marginBottom:20}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#f59e0b'}}>{challenge.xp_reward}</div>
+                <div style={{fontSize:10, color:'#64748b'}}>XP Reward</div>
+              </div>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#06b6d4'}}>{participants}</div>
+                <div style={{fontSize:10, color:'#64748b'}}>Participants</div>
+              </div>
+            </div>
+            <Btn onClick={joinChallenge}>⚔️ JOIN CHALLENGE</Btn>
+          </div>
+        </Panel>
+      )}
+
+      {!loading && !challenge && candidates.length > 0 && (
+        <Panel title="Vote for This Week's Challenge">
+          <div style={{fontFamily:"'Share Tech Mono',monospace", fontSize:11, color:'#06b6d4', padding:10, background:'rgba(6,182,212,0.05)', border:'1px solid rgba(6,182,212,0.15)', borderRadius:6, marginBottom:16}}>
+            Vote for the challenge you want this week. Most votes wins!
+          </div>
+          {candidates.map(c => (
+            <div key={c.id} onClick={()=>!hasVoted&&vote(c.id)} style={{display:'flex', alignItems:'center', gap:12, padding:14, background:'#13131f', border:`1px solid ${hasVoted?'#1e1e35':'rgba(124,58,237,0.2)'}`, borderRadius:8, marginBottom:10, cursor:hasVoted?'default':'pointer', transition:'all 0.2s', opacity:hasVoted?0.7:1}}>
+              <div style={{fontSize:'1.8rem'}}>{c.icon}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{c.title}</div>
+                <div style={{fontSize:11, color:'#64748b', marginTop:2}}>{c.description}</div>
+                <div style={{fontSize:10, color:'#f59e0b', marginTop:4}}>+{c.xp_reward} XP reward · {c.vote_count||0} votes</div>
+              </div>
+              {!hasVoted && <div style={{fontSize:10, color:'#a855f7', border:'1px solid #7c3aed', borderRadius:4, padding:'4px 8px', fontWeight:700}}>VOTE</div>}
+            </div>
+          ))}
+          {hasVoted && <div style={{textAlign:'center', fontSize:12, color:'#64748b', marginTop:8, fontStyle:'italic'}}>Vote cast! Challenge activates Monday.</div>}
+        </Panel>
+      )}
+    </div>
+  )
+}
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────
 export default function App(){
@@ -752,6 +1174,9 @@ export default function App(){
         {page==='profile'&&<ProfilePage G={G} session={session} lv={lv} rank={rank} title={title} xpPct={xpPct} setModal={setModal}/>}
         {page==='community'&&<CommunityPage G={G} session={session} rank={rank} lv={lv}/>}
         {page==='leaderboard'&&<LeaderboardPage session={session}/>}
+        {page==='friends'&&<FriendsPage G={G} session={session}/>}
+        {page==='analytics'&&<AnalyticsPage G={G}/>}
+        {page==='challenge'&&<ChallengePage G={G} session={session} notif={notif}/>}
       </div>
       {/* MODALS */}
       {modal&&<ModalHost modal={modal} setModal={setModal} G={G} addM={addM} addGoal={addGoal} addX={addX} updPlayer={updPlayer} buyShop={buyShop} addShopItem={addShopItem} delShopItem={delShopItem} endDay={endDay}/>}
@@ -810,7 +1235,7 @@ function LevelUpOverlay({data}){
 
 // ── NAV ────────────────────────────────────────────────────────────────────
 function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
-  const tabs=[{id:'dashboard',label:'🏠 Dashboard'},{id:'missions',label:'⚔ Missions'},{id:'weekly',label:'📊 Weekly'},{id:'calendar',label:'📅 Calendar'},{id:'attributes',label:'⚡ Attributes'},{id:'profile',label:'👤 Profile'},{id:'community',label:'👥 Community'},{id:'leaderboard',label:'🏆 Ranks'}]
+  const tabs=[{id:'dashboard',label:'🏠 Dashboard'},{id:'missions',label:'⚔ Missions'},{id:'weekly',label:'📊 Weekly'},{id:'calendar',label:'📅 Calendar'},{id:'attributes',label:'⚡ Attributes'},{id:'profile',label:'👤 Profile'},{id:'community',label:'👥 Community'},{id:'leaderboard',label:'🏆 Ranks'},{id:'friends',label:'👥 Friends'},{id:'analytics',label:'📈 Analytics'},{id:'challenge',label:'⚡ Challenge'}]
   return(
     <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 20px',backdropFilter:'blur(10px)',gap:12}}>
       <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2,flexShrink:0}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
