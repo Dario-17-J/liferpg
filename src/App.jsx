@@ -1923,9 +1923,9 @@ function Attributes({G,updAM}){
 // ── MODAL HOST ─────────────────────────────────────────────────────────────
 function ModalHost({modal,setModal,G,addM,addGoal,addX,updPlayer,buyShop,addShopItem,delShopItem,endDay}){
   const close=()=>setModal(null)
-  const overlay={position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:9990,display:'flex',alignItems:window.innerWidth<768?'flex-end':'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:window.innerWidth<768?'0':'20px'}
+  const overlay={position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:9990,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:'12px'}
   const isMobileModal=window.innerWidth<768
-  const card={background:'#0f0f1a',border:'1px solid #7c3aed',borderRadius:isMobileModal?'12px 12px 0 0':'8px',padding:isMobileModal?'16px 16px 24px':'28px',width:isMobileModal?'100%':'90%',maxWidth:480,boxShadow:'0 0 40px rgba(124,58,237,0.3)',maxHeight:'92vh',overflowY:'auto'}
+  const card={background:'#0f0f1a',border:'1px solid #7c3aed',borderRadius:8,padding:isMobileModal?14:28,width:'100%',maxWidth:480,boxShadow:'0 0 40px rgba(124,58,237,0.3)',maxHeight:'88vh',overflowY:'auto'}
   const mh2={fontFamily:"'Orbitron',monospace",fontSize:'0.95rem',color:'#a855f7',marginBottom:20,textTransform:'uppercase',letterSpacing:2}
   const row={marginBottom:14}
   const lbl={fontSize:11,textTransform:'uppercase',letterSpacing:1.5,color:'#64748b',marginBottom:6,display:'block'}
