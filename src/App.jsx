@@ -1762,6 +1762,49 @@ function Weekly({G,goalTab,setGoalTab,incGoal,delGoal,toggleX,addX,delX,setModal
   const wms=G.missions,wd=wms.filter(m=>m.done)
   const wp=wms.length?Math.round(wd.length/wms.length*100):0
   const pdays=Array.from({length:7},(_,i)=>{const d=new Date(ws);d.setDate(ws.getDate()+i);const h=G.history[localDS(d)];return h&&h.pct>=1?1:0}).reduce((a,b)=>a+b,0)
+  const [isMobile,setIsMobile]=useState(window.innerWidth<768)
+  useEffect(()=>{const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn)},[])
+
+  const statsRow = (
+    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:isMobile?8:10,marginBottom:16}}>
+      {[{v:G.streak+'🔥',l:'Streak',c:'#f59e0b'},{v:wp+'%',l:'Week',c:'#06b6d4'},{v:pdays,l:'Perfect',c:'#10b981'},{v:G.best,l:'Best',c:'#a855f7'}].map((s,i)=>(
+        <div key={i} style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:6,padding:12,textAlign:'center'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:isMobile?'1.1rem':'1.3rem',fontWeight:700,color:s.c}}>{s.v}</div>
+          <div style={{fontSize:9,textTransform:'uppercase',letterSpacing:1.5,color:'#64748b',marginTop:2}}>{s.l}</div>
+        </div>
+      ))}
+    </div>
+  )
+
+  if(isMobile) return(
+    <div style={{padding:'0 4px'}}>
+      {statsRow}
+      <Panel title="This Week" style={{marginBottom:12}}>
+        <WeekGrid G={G}/>
+        <div style={{fontSize:10,textTransform:'uppercase',letterSpacing:2,color:'#64748b',margin:'12px 0 4px'}}>Bar Chart</div>
+        <BigBars G={G}/>
+      </Panel>
+      <Panel title="Attribute Growth" style={{marginBottom:12}}>
+        {Object.keys(G.am).map(k=>{
+          const m=G.am[k],v=Math.round((G.attrs[k]||0)*10)/10,p=Math.min(100,G.attrs[k]||0)
+          return<div key={k} style={{marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}><span style={{fontSize:12,color:'#e2e8f0'}}>{m.e} {m.n}</span><span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:12,color:m.c}}>{v}</span></div>
+            <div style={{height:6,background:'#1e1e35',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',width:`${p}%`,background:m.c,borderRadius:3,boxShadow:`0 0 6px ${m.c}`,transition:'width 0.8s'}}/></div>
+          </div>
+        })}
+      </Panel>
+      <Panel title="Goals" style={{marginBottom:12}} action={<Btn sm onClick={()=>setModal({type:'goal'})}>+ ADD</Btn>}>
+        <div style={{display:'flex',gap:4,marginBottom:12,borderBottom:'1px solid #1e1e35',paddingBottom:8}}>
+          {['short','long'].map((t)=><button key={t} onClick={()=>setGoalTab(p=>({...p,w:t}))} style={{padding:'4px 12px',background:goalTab.w===t?'rgba(124,58,237,0.15)':'none',border:goalTab.w===t?'1px solid #7c3aed':'1px solid transparent',borderRadius:4,color:goalTab.w===t?'#a855f7':'#64748b',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>{t==='short'?'Short':'Long'}</button>)}
+        </div>
+        <GoalList goals={G.goals} type={goalTab.w} incGoal={incGoal} delGoal={delGoal}/>
+      </Panel>
+      <Panel title="Bonus Tasks">
+        <ExtraList extras={G.extras} toggleX={toggleX} delX={delX} addX={addX}/>
+      </Panel>
+    </div>
+  )
+
   return(
     <div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
