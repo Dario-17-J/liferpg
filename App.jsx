@@ -815,7 +815,7 @@ function ChallengePage({G, session, notif}) {
 
     // Check if this week has an active challenge
     const { data: active } = await supabase.from('challenges')
-      .select('*').eq('week_id', weekId).eq('status', 'active').single()
+      .select('*').eq('week_id', weekId).eq('status', 'active').maybeSingle()
 
     if (active) {
       setChallenge(active)
@@ -832,7 +832,7 @@ function ChallengePage({G, session, notif}) {
         setCandidates(voting)
         // Check if user voted this week using votes table
         const { data: myVote } = await supabase.from('challenge_votes')
-          .select('id').eq('user_id', session.user.id).eq('week_id', weekId).single()
+          .select('user_id').eq('user_id', session.user.id).eq('week_id', weekId).maybeSingle()
         if (myVote) setHasVoted(true)
       } else {
         // Generate new candidates for this week
@@ -840,7 +840,7 @@ function ChallengePage({G, session, notif}) {
         const toInsert = shuffled.map(c => ({
           week_id: weekId, status: 'voting',
           title: c.title, description: c.desc, icon: c.icon,
-          xp_reward: c.xpReward, votes: [], vote_count: 0
+          xp_reward: c.xpReward, vote_count: 0
         }))
         const { data: inserted } = await supabase.from('challenges').insert(toInsert).select()
         setCandidates(inserted||[])
@@ -868,8 +868,8 @@ function ChallengePage({G, session, notif}) {
     }
 
     // Vote recorded — now increment count
-    const { data: cur, error: fetchErr } = await supabase
-      .from('challenges').select('vote_count').eq('id', challengeId).single()
+    const { data: cur } = await supabase
+      .from('challenges').select('vote_count').eq('id', challengeId).maybeSingle()
 
     const newCount = (cur?.vote_count || 0) + 1
     await supabase.from('challenges')
