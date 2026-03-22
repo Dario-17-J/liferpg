@@ -876,8 +876,9 @@ function ChallengePage({G, session, notif}) {
       return
     }
 
-    // Increment vote count
-    await supabase.rpc('increment_vote', { challenge_id_input: challengeId })
+    // Increment vote count directly
+    const { data: cur } = await supabase.from('challenges').select('vote_count').eq('id', challengeId).single()
+    await supabase.from('challenges').update({ vote_count: (cur?.vote_count||0) + 1 }).eq('id', challengeId)
     notif('✅ Vote cast!', 'xp')
     loadChallenge()
   }
