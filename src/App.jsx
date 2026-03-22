@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase.js'
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────
+// PRO LIMITS
+const FREE_MISSION_LIMIT = 5
+const PRO_MONTHLY = 54
+const PRO_LIFETIME = 999
+const isPro = (G) => G?.is_pro === true
 const LXP=[0,300,700,1300,2100,3200,4600,6500,9000,12000,16000,21000,27000,34000,43000,54000,67000,83000,102000,125000,150000]
 const DEFAM={physical:{n:'Physical',d:'Strength, fitness & body health',e:'💪',c:'#ef4444'},mental:{n:'Mental',d:'Focus, learning & intelligence',e:'🧠',c:'#7c3aed'},social:{n:'Social',d:'Relationships & communication',e:'🌐',c:'#06b6d4'},financial:{n:'Financial',d:'Money, career & wealth',e:'💰',c:'#f59e0b'},creative:{n:'Creative',d:'Art, ideas & expression',e:'🎨',c:'#ec4899'},discipline:{n:'Discipline',d:'Consistency & willpower',e:'⚡',c:'#10b981'}}
 const DEFSHOP=[
@@ -55,6 +60,7 @@ function getTitle(l){let t=TITLES[0];Object.keys(TITLES).map(Number).sort((a,b)=
 const td=()=>{const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');}
 const localDS=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
 const wkStr=()=>{const d=new Date(),dy=d.getDay(),m=new Date(d);m.setDate(d.getDate()-(dy===0?6:dy-1));return localDS(m);}
+const RAZORPAY_KEY = import.meta.env.VITE_RAZORPAY_KEY || ''
 const BLANK=()=>({player:{n:'Hunter',av:'🧑‍💻',t:''},xp:0,gold:0,txp:0,streak:0,best:0,lastDay:null,missions:[{id:1,n:'Morning Workout',tier:'S',cat:'physical',xp:100,penalty:50,done:false,pen:false},{id:2,n:'Deep Work / Study (2 hrs)',tier:'S',cat:'mental',xp:100,penalty:50,done:false,pen:false},{id:3,n:'Drink 2L Water',tier:'A',cat:'physical',xp:25,penalty:0,done:false,pen:false},{id:4,n:'Read 20 min',tier:'A',cat:'mental',xp:50,penalty:10,done:false,pen:false},{id:5,n:'No social media before noon',tier:'A',cat:'discipline',xp:50,penalty:25,done:false,pen:false}],extras:[{id:10,n:'Learn something new',done:false,week:wkStr()},{id:11,n:'Reach out to someone you care about',done:false,week:wkStr()}],goals:[{id:20,n:'Build a consistent streak',type:'short',target:7,prog:0,created:td()},{id:21,n:'Level up to Challenger',type:'long',target:20,prog:0,created:td()}],history:{},attrs:{physical:0,mental:0,social:0,financial:0,creative:0,discipline:0},am:JSON.parse(JSON.stringify(DEFAM)),shop:DEFSHOP.map(x=>({...x}))})
 
 
@@ -478,7 +484,7 @@ function LeaderboardPage({session}) {
               <div style={{fontFamily:"'Orbitron',monospace", fontSize:i<3?'1.2rem':'0.8rem', minWidth:32, textAlign:'center', color:i<3?undefined:'#64748b'}}>{medal}</div>
               <div style={{fontSize:'1.3rem'}}>{u.avatar||'🧑‍💻'}</div>
               <div style={{flex:1}}>
-                <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{u.username||'Hunter'}{isMe?' (You)':''}{u.is_pro?' 👑':''}</div>
+                <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{u.username||'Hunter'}{isMe?' (You)':''}{u.is_pro?<span style={{fontSize:9,color:'#f59e0b',fontFamily:"'Orbitron',monospace",marginLeft:4,border:'1px solid rgba(245,158,11,0.4)',borderRadius:3,padding:'1px 4px'}}>👑 PRO</span>:null}</div>
                 <div style={{fontSize:10, color:'#64748b'}}>{u.rank_label||'DORMANT I'}</div>
               </div>
               <div style={{textAlign:'right'}}>
@@ -790,6 +796,9 @@ function ChallengePage({G, session, notif}) {
   const [hasVoted, setHasVoted] = useState(false)
   const [loading, setLoading] = useState(true)
   const [participants, setParticipants] = useState(0)
+  const [leaderboard, setLeaderboard] = useState([])
+  const [countdown, setCountdown] = useState('')
+  const [joined, setJoined] = useState(false)
 
   const CHALLENGE_IDEAS = [
     {title:'7-Day Streak Challenge', desc:'Maintain a 7-day streak this week. Complete at least 50% of missions every day.', icon:'🔥', xpReward:300},
@@ -800,8 +809,6 @@ function ChallengePage({G, session, notif}) {
     {title:'Gold Rush', desc:'Earn 200+ gold this week from mission completions.', icon:'🥇', xpReward:200},
   ]
 
-  useEffect(() => { loadChallenge() }, [])
-
   const getWeekId = () => {
     const now = new Date()
     const start = new Date(now)
@@ -809,33 +816,78 @@ function ChallengePage({G, session, notif}) {
     return localDS(start)
   }
 
+  // Countdown to next Monday
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date()
+      const nextMonday = new Date(now)
+      nextMonday.setDate(now.getDate() + (1 + 7 - now.getDay()) % 7 || 7)
+      nextMonday.setHours(0,0,0,0)
+      const diff = nextMonday - now
+      const d = Math.floor(diff/86400000)
+      const h = Math.floor((diff%86400000)/3600000)
+      const m = Math.floor((diff%3600000)/60000)
+      const s = Math.floor((diff%60000)/1000)
+      setCountdown(`${d}d ${h}h ${m}m ${s}s`)
+    }
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  useEffect(() => { loadChallenge() }, [])
+
+  // Auto-activate highest voted challenge if it's Monday
+  const autoActivate = async (weekId, votingChallenges) => {
+    const now = new Date()
+    if (now.getDay() !== 1) return // only on Monday
+    // Sort by votes, then by XP reward as tiebreaker
+    const top = [...votingChallenges].sort((a,b) => {
+      const voteDiff = (b.vote_count||0) - (a.vote_count||0)
+      if (voteDiff !== 0) return voteDiff
+      return (b.xp_reward||0) - (a.xp_reward||0) // tiebreaker: higher XP wins
+    })[0]
+    if (!top) return
+    await supabase.from('challenges').update({status:'active'}).eq('id', top.id)
+    return top
+  }
+
   const loadChallenge = async () => {
     setLoading(true)
     const weekId = getWeekId()
 
-    // Check if this week has an active challenge
     const { data: active } = await supabase.from('challenges')
       .select('*').eq('week_id', weekId).eq('status', 'active').maybeSingle()
 
     if (active) {
       setChallenge(active)
-      // Count participants
       const { count } = await supabase.from('challenge_entries')
         .select('*', {count:'exact'}).eq('challenge_id', active.id)
       setParticipants(count||0)
+      // Load leaderboard
+      const { data: entries } = await supabase.from('challenge_entries')
+        .select('*').eq('challenge_id', active.id).order('joined_at', {ascending:true}).limit(20)
+      setLeaderboard(entries||[])
+      // Check if user joined
+      const myEntry = (entries||[]).find(e => e.user_id === session.user.id)
+      if (myEntry) setJoined(true)
     } else {
-      // Show voting - pick 4 random candidates
       const { data: voting } = await supabase.from('challenges')
         .select('*').eq('week_id', weekId).eq('status', 'voting')
 
       if (voting?.length) {
-        setCandidates(voting)
-        // Check if user voted this week using votes table
+        // Try auto-activate on Monday
+        const activated = await autoActivate(weekId, voting)
+        if (activated) {
+          setChallenge({...activated, status:'active'})
+          setLoading(false)
+          return
+        }
+        setCandidates(voting.sort((a,b)=>(b.vote_count||0)-(a.vote_count||0)))
         const { data: myVote } = await supabase.from('challenge_votes')
           .select('user_id').eq('user_id', session.user.id).eq('week_id', weekId).maybeSingle()
         if (myVote) setHasVoted(true)
       } else {
-        // Generate new candidates for this week
         const shuffled = [...CHALLENGE_IDEAS].sort(()=>Math.random()-0.5).slice(0,4)
         const toInsert = shuffled.map(c => ({
           week_id: weekId, status: 'voting',
@@ -851,94 +903,243 @@ function ChallengePage({G, session, notif}) {
 
   const vote = async (challengeId) => {
     if (hasVoted) return
-
     const weekId = getWeekId()
-
-    // Try insert into votes table first
     const { error: voteError } = await supabase.from('challenge_votes').insert({
-      user_id: session.user.id,
-      challenge_id: challengeId,
-      week_id: weekId
+      user_id: session.user.id, challenge_id: challengeId, week_id: weekId
     })
-
-    if (voteError) {
-      notif('Already voted this week!', 'penalty')
-      setHasVoted(true)
-      return
-    }
-
-    // Vote recorded — now increment count
-    const { data: cur } = await supabase
-      .from('challenges').select('vote_count').eq('id', challengeId).maybeSingle()
-
-    const newCount = (cur?.vote_count || 0) + 1
-    await supabase.from('challenges')
-      .update({ vote_count: newCount })
-      .eq('id', challengeId)
-
+    if (voteError) { notif('Already voted!', 'penalty'); setHasVoted(true); return }
+    const { data: cur } = await supabase.from('challenges').select('vote_count').eq('id', challengeId).maybeSingle()
+    const newCount = (cur?.vote_count||0) + 1
+    await supabase.from('challenges').update({vote_count: newCount}).eq('id', challengeId)
     setHasVoted(true)
     notif('✅ Vote cast!', 'xp')
-    // Update UI immediately without reloading
-    setCandidates(prev => prev.map(c =>
-      c.id === challengeId ? {...c, vote_count: newCount} : c
-    ))
+    setCandidates(prev => prev.map(c => c.id===challengeId ? {...c,vote_count:newCount} : c).sort((a,b)=>(b.vote_count||0)-(a.vote_count||0)))
   }
 
   const joinChallenge = async () => {
-    if (!challenge) return
+    if (!challenge || joined) return
     await supabase.from('challenge_entries').upsert({
       challenge_id: challenge.id, user_id: session.user.id,
       username: G.player?.n||'Hunter', avatar: G.player?.av||'🧑‍💻',
       joined_at: new Date().toISOString(), completed: false
     }, {onConflict: 'challenge_id,user_id'})
     setParticipants(p => p+1)
+    setJoined(true)
+    setLeaderboard(prev => [...prev, {user_id:session.user.id, username:G.player?.n||'Hunter', avatar:G.player?.av||'🧑‍💻', completed:false}])
     notif('⚔️ Joined the challenge!', 'levelup')
   }
+
+  // Countdown display component
+  const CountdownBar = ({label}) => (
+    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', background:'rgba(124,58,237,0.08)', border:'1px solid rgba(124,58,237,0.2)', borderRadius:6, marginBottom:12}}>
+      <span style={{fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:1}}>{label}</span>
+      <span style={{fontFamily:"'Share Tech Mono',monospace", fontSize:13, color:'#a855f7', fontWeight:700}}>⏱ {countdown}</span>
+    </div>
+  )
 
   return (
     <div style={{maxWidth:680, margin:'0 auto'}}>
       {loading && <div style={{textAlign:'center', padding:60, color:'#334155', fontFamily:"'Share Tech Mono',monospace"}}>Loading challenge...</div>}
 
       {!loading && challenge && (
-        <Panel title="This Week's Challenge">
-          <div style={{textAlign:'center', padding:24, background:`rgba(124,58,237,0.06)`, border:'1px solid rgba(124,58,237,0.2)', borderRadius:8, marginBottom:16}}>
-            <div style={{fontSize:'3rem', marginBottom:8}}>{challenge.icon}</div>
-            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.2rem', fontWeight:700, color:'#e2e8f0', marginBottom:8}}>{challenge.title}</div>
-            <div style={{fontSize:13, color:'#94a3b8', marginBottom:16, lineHeight:1.7}}>{challenge.description}</div>
-            <div style={{display:'flex', justifyContent:'center', gap:24, marginBottom:20}}>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#f59e0b'}}>{challenge.xp_reward}</div>
-                <div style={{fontSize:10, color:'#64748b'}}>XP Reward</div>
+        <>
+          <Panel title="⚡ This Week's Challenge" style={{marginBottom:16}}>
+            <CountdownBar label="Challenge ends in"/>
+            <div style={{textAlign:'center', padding:24, background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.2)', borderRadius:8, marginBottom:16}}>
+              <div style={{fontSize:'3rem', marginBottom:8}}>{challenge.icon}</div>
+              <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.2rem', fontWeight:700, color:'#e2e8f0', marginBottom:8}}>{challenge.title}</div>
+              <div style={{fontSize:13, color:'#94a3b8', marginBottom:16, lineHeight:1.7}}>{challenge.description}</div>
+              <div style={{display:'flex', justifyContent:'center', gap:24, marginBottom:20}}>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#f59e0b'}}>{challenge.xp_reward}</div>
+                  <div style={{fontSize:10, color:'#64748b'}}>XP Reward</div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#06b6d4'}}>{participants}</div>
+                  <div style={{fontSize:10, color:'#64748b'}}>Hunters Joined</div>
+                </div>
               </div>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#06b6d4'}}>{participants}</div>
-                <div style={{fontSize:10, color:'#64748b'}}>Participants</div>
-              </div>
+              {joined
+                ? <div style={{padding:'10px 20px', background:'rgba(16,185,129,0.1)', border:'1px solid #10b981', borderRadius:6, color:'#10b981', fontFamily:"'Orbitron',monospace", fontSize:12}}>✅ YOU JOINED THIS CHALLENGE</div>
+                : <Btn onClick={joinChallenge}>⚔️ JOIN CHALLENGE</Btn>
+              }
             </div>
-            <Btn onClick={joinChallenge}>⚔️ JOIN CHALLENGE</Btn>
-          </div>
-        </Panel>
+          </Panel>
+
+          {/* Leaderboard */}
+          <Panel title="🏆 Challenge Leaderboard">
+            {!leaderboard.length && <div style={{textAlign:'center', padding:20, color:'#334155', fontSize:13}}>No participants yet. Be the first!</div>}
+            {leaderboard.map((e,i) => {
+              const isMe = e.user_id === session.user.id
+              const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`
+              return(
+                <div key={e.user_id} style={{display:'flex', alignItems:'center', gap:12, padding:'10px 12px', background:isMe?'rgba(124,58,237,0.08)':'#13131f', border:`1px solid ${isMe?'rgba(124,58,237,0.3)':'#1e1e35'}`, borderRadius:6, marginBottom:6}}>
+                  <div style={{fontFamily:"'Orbitron',monospace", fontSize:i<3?'1.1rem':'0.8rem', minWidth:28, textAlign:'center'}}>{medal}</div>
+                  <div style={{fontSize:'1.2rem'}}>{e.avatar||'🧑‍💻'}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{e.username||'Hunter'}{isMe?' (You)':''}</div>
+                  </div>
+                  <div style={{fontSize:10, padding:'3px 8px', borderRadius:4, background:e.completed?'rgba(16,185,129,0.1)':'rgba(245,158,11,0.1)', color:e.completed?'#10b981':'#f59e0b', border:`1px solid ${e.completed?'rgba(16,185,129,0.3)':'rgba(245,158,11,0.3)'}`}}>
+                    {e.completed?'✅ DONE':'⏳ IN PROGRESS'}
+                  </div>
+                </div>
+              )
+            })}
+          </Panel>
+        </>
       )}
 
       {!loading && !challenge && candidates.length > 0 && (
-        <Panel title="Vote for This Week's Challenge">
+        <Panel title="🗳 Vote for This Week's Challenge">
+          <CountdownBar label="Voting ends in"/>
           <div style={{fontFamily:"'Share Tech Mono',monospace", fontSize:11, color:'#06b6d4', padding:10, background:'rgba(6,182,212,0.05)', border:'1px solid rgba(6,182,212,0.15)', borderRadius:6, marginBottom:16}}>
-            Vote for the challenge you want this week. Most votes wins!
+            Vote for the challenge you want this week. Highest votes wins and activates Monday!
           </div>
-          {candidates.map(c => (
-            <div key={c.id} onClick={()=>!hasVoted&&vote(c.id)} style={{display:'flex', alignItems:'center', gap:12, padding:14, background:'#13131f', border:`1px solid ${hasVoted?'#1e1e35':'rgba(124,58,237,0.2)'}`, borderRadius:8, marginBottom:10, cursor:hasVoted?'default':'pointer', transition:'all 0.2s', opacity:hasVoted?0.7:1}}>
-              <div style={{fontSize:'1.8rem'}}>{c.icon}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{c.title}</div>
-                <div style={{fontSize:11, color:'#64748b', marginTop:2}}>{c.description}</div>
-                <div style={{fontSize:10, color:'#f59e0b', marginTop:4}}>+{c.xp_reward} XP reward · {c.vote_count||0} votes</div>
+          {candidates.map((c,i) => {
+            const isLeading = i===0 && (c.vote_count||0) > 0
+            return(
+              <div key={c.id} onClick={()=>!hasVoted&&vote(c.id)} style={{display:'flex', alignItems:'center', gap:12, padding:14, background:isLeading?'rgba(124,58,237,0.08)':'#13131f', border:`1px solid ${isLeading?'rgba(124,58,237,0.4)':hasVoted?'#1e1e35':'rgba(124,58,237,0.2)'}`, borderRadius:8, marginBottom:10, cursor:hasVoted?'default':'pointer', transition:'all 0.2s'}}>
+                <div style={{fontSize:'1.8rem'}}>{c.icon}</div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{c.title}</div>
+                    {isLeading && <span style={{fontSize:9, background:'rgba(124,58,237,0.2)', color:'#a855f7', border:'1px solid #7c3aed', borderRadius:3, padding:'1px 5px', fontWeight:700}}>LEADING</span>}
+                  </div>
+                  <div style={{fontSize:11, color:'#64748b', marginTop:2}}>{c.description}</div>
+                  <div style={{display:'flex', alignItems:'center', gap:8, marginTop:6}}>
+                    <div style={{flex:1, height:4, background:'#1e1e35', borderRadius:2, overflow:'hidden'}}>
+                      <div style={{height:'100%', width:`${candidates.reduce((s,x)=>s+(x.vote_count||0),0)>0?Math.round((c.vote_count||0)/candidates.reduce((s,x)=>s+(x.vote_count||0),0)*100):0}%`, background:'#7c3aed', borderRadius:2, transition:'width 0.5s'}}/>
+                    </div>
+                    <span style={{fontSize:10, color:'#f59e0b', fontFamily:"'Share Tech Mono',monospace", whiteSpace:'nowrap'}}>+{c.xp_reward}XP · {c.vote_count||0} votes</span>
+                  </div>
+                </div>
+                {!hasVoted && <div style={{fontSize:10, color:'#a855f7', border:'1px solid #7c3aed', borderRadius:4, padding:'6px 10px', fontWeight:700, flexShrink:0}}>VOTE</div>}
               </div>
-              {!hasVoted && <div style={{fontSize:10, color:'#a855f7', border:'1px solid #7c3aed', borderRadius:4, padding:'4px 8px', fontWeight:700}}>VOTE</div>}
-            </div>
-          ))}
-          {hasVoted && <div style={{textAlign:'center', fontSize:12, color:'#64748b', marginTop:8, fontStyle:'italic'}}>Vote cast! Challenge activates Monday.</div>}
+            )
+          })}
+          {hasVoted && <div style={{textAlign:'center', padding:10, background:'rgba(16,185,129,0.05)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:6, fontSize:12, color:'#10b981', marginTop:8}}>✅ Vote cast! The highest voted challenge activates automatically on Monday.</div>}
         </Panel>
       )}
+    </div>
+  )
+}
+
+
+// ── LOCK ICON — shown on disabled pro features ─────────────────────────────
+function LockIcon({size=16}){
+  return <span style={{fontSize:size,filter:'grayscale(1)',opacity:0.6}}>🔒</span>
+}
+
+// ── PRO UPGRADE MODAL ──────────────────────────────────────────────────────
+function ProUpgradeModal({close, razorpayKey, session, G, onSuccess}){
+  const [loading, setLoading] = useState(false)
+  const [plan, setPlan] = useState('lifetime')
+
+  const handlePay = () => {
+    if(!razorpayKey){
+      alert('Payment not configured yet. Coming soon!')
+      return
+    }
+    setLoading(true)
+    const amount = plan==='lifetime' ? PRO_LIFETIME*100 : PRO_MONTHLY*100
+    const options = {
+      key: razorpayKey,
+      amount,
+      currency: 'INR',
+      name: 'Life RPG',
+      description: plan==='lifetime' ? 'Pro Lifetime Access' : 'Pro Monthly',
+      image: '⚡',
+      prefill: {
+        email: session?.user?.email || '',
+        name: G?.player?.n || 'Hunter'
+      },
+      theme: { color: '#7c3aed' },
+      handler: async (response) => {
+        // Payment successful - upgrade user in DB
+        await supabase.from('profiles').update({is_pro: true}).eq('id', session.user.id)
+        await supabase.from('game_state').update({
+          state: {...G, is_pro: true}
+        }).eq('user_id', session.user.id)
+        onSuccess()
+        close()
+        setLoading(false)
+      },
+      modal: { ondismiss: () => setLoading(false) }
+    }
+    const rzp = new window.Razorpay(options)
+    rzp.open()
+  }
+
+  const features = [
+    {icon:'⚔️', text:'Unlimited missions (free = 5 max)'},
+    {icon:'👥', text:'Friends system — compete with others'},
+    {icon:'📈', text:'Advanced analytics — 30-day charts'},
+    {icon:'🎯', text:'Weekly community challenges'},
+    {icon:'👑', text:'PRO badge on leaderboard'},
+    {icon:'🏅', text:'Exclusive PRO-only shop badges'},
+    {icon:'☁️', text:'Priority cloud sync'},
+  ]
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:9995,display:'grid',placeItems:'center',backdropFilter:'blur(6px)',padding:16}} onClick={e=>{if(e.target===e.currentTarget)close()}}>
+      <div style={{background:'#0a0a0f',border:'1px solid #7c3aed',borderRadius:12,padding:24,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 0 60px rgba(124,58,237,0.4)'}}>
+        {/* Header */}
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <div style={{fontSize:'2rem',marginBottom:6}}>👑</div>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.3rem',fontWeight:900,background:'linear-gradient(135deg,#f59e0b,#a855f7)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>LIFE RPG PRO</div>
+          <div style={{fontSize:12,color:'#64748b',marginTop:4}}>Unlock your full potential</div>
+        </div>
+
+        {/* Plan selector */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:20}}>
+          <div onClick={()=>setPlan('monthly')} style={{padding:14,background:plan==='monthly'?'rgba(124,58,237,0.15)':'#13131f',border:`2px solid ${plan==='monthly'?'#7c3aed':'#1e1e35'}`,borderRadius:8,textAlign:'center',cursor:'pointer',transition:'all 0.2s'}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#a855f7'}}>₹54</div>
+            <div style={{fontSize:10,color:'#64748b',marginTop:2,textTransform:'uppercase',letterSpacing:1}}>Per Month</div>
+            <div style={{fontSize:9,color:'#334155',marginTop:4}}>Cancel anytime</div>
+          </div>
+          <div onClick={()=>setPlan('lifetime')} style={{padding:14,background:plan==='lifetime'?'rgba(245,158,11,0.12)':'#13131f',border:`2px solid ${plan==='lifetime'?'#f59e0b':'#1e1e35'}`,borderRadius:8,textAlign:'center',cursor:'pointer',transition:'all 0.2s',position:'relative'}}>
+            <div style={{position:'absolute',top:-8,left:'50%',transform:'translateX(-50%)',background:'#f59e0b',color:'black',fontSize:8,fontWeight:700,padding:'2px 8px',borderRadius:10,textTransform:'uppercase',letterSpacing:1,whiteSpace:'nowrap'}}>BEST VALUE</div>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#f59e0b'}}>₹999</div>
+            <div style={{fontSize:10,color:'#64748b',marginTop:2,textTransform:'uppercase',letterSpacing:1}}>Lifetime</div>
+            <div style={{fontSize:9,color:'#10b981',marginTop:4}}>Pay once, use forever</div>
+          </div>
+        </div>
+
+        {/* Features */}
+        <div style={{marginBottom:20}}>
+          {features.map((f,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderBottom:i<features.length-1?'1px solid #1e1e35':undefined}}>
+              <span>{f.icon}</span>
+              <span style={{fontSize:12,color:'#94a3b8'}}>{f.text}</span>
+              <span style={{marginLeft:'auto',color:'#10b981',fontSize:12}}>✓</span>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <button onClick={handlePay} disabled={loading} style={{width:'100%',padding:14,background:'linear-gradient(135deg,#7c3aed,#a855f7)',border:'none',borderRadius:8,color:'white',fontFamily:"'Orbitron',monospace",fontSize:14,fontWeight:700,letterSpacing:1,cursor:'pointer',marginBottom:8}}>
+          {loading?'Processing...':plan==='lifetime'?'⚡ GET PRO — ₹999':'⚡ GET PRO — ₹54/mo'}
+        </button>
+        <button onClick={close} style={{width:'100%',padding:8,background:'none',border:'none',color:'#334155',cursor:'pointer',fontSize:12,fontFamily:"'Rajdhani',sans-serif"}}>Maybe later</button>
+      </div>
+    </div>
+  )
+}
+
+// ── LOCKED FEATURE PAGE ───────────────────────────────────────────────────
+function LockedFeature({name, desc, setShowPro}){
+  return(
+    <div style={{maxWidth:500,margin:'60px auto',textAlign:'center',padding:32}}>
+      <div style={{fontSize:'3rem',marginBottom:12}}>🔒</div>
+      <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.2rem',fontWeight:700,color:'#e2e8f0',marginBottom:8}}>{name}</div>
+      <div style={{fontSize:13,color:'#64748b',marginBottom:24,lineHeight:1.7}}>{desc}</div>
+      <div style={{padding:16,background:'rgba(124,58,237,0.06)',border:'1px solid rgba(124,58,237,0.2)',borderRadius:8,marginBottom:24}}>
+        <div style={{fontSize:11,color:'#64748b',marginBottom:4,textTransform:'uppercase',letterSpacing:1}}>This is a PRO feature</div>
+        <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1rem',color:'#a855f7'}}>Upgrade for ₹999 lifetime or ₹54/month</div>
+      </div>
+      <button onClick={()=>setShowPro(true)} style={{padding:'14px 32px',background:'linear-gradient(135deg,#7c3aed,#a855f7)',border:'none',borderRadius:8,color:'white',fontFamily:"'Orbitron',monospace",fontSize:13,fontWeight:700,letterSpacing:1,cursor:'pointer'}}>
+        👑 UNLOCK PRO
+      </button>
     </div>
   )
 }
@@ -956,6 +1157,7 @@ export default function App(){
   const [calM,setCalM]=useState(new Date().getMonth())
   const [goalTab,setGoalTab]=useState({d:'short',w:'short'})
   const [lvUpAnim,setLvUpAnim]=useState(null)
+  const [showPro,setShowPro]=useState(false)
   const saveTimer=useRef(null)
 
   // ── AUTH ──
@@ -1103,7 +1305,14 @@ export default function App(){
   }
 
   const delM=(id)=>upd(s=>{s.missions=s.missions.filter(m=>m.id!==id);return s})
-  const addM=(data)=>upd(s=>{s.missions.push({id:Date.now(),...data,done:false,pen:false});return s})
+  const addM=(data)=>upd(s=>{
+    if(!isPro(s)&&s.missions.length>=FREE_MISSION_LIMIT){
+      setShowPro(true)
+      return s
+    }
+    s.missions.push({id:Date.now(),...data,done:false,pen:false})
+    return s
+  })
 
   const toggleX=(id)=>upd(s=>{
     const x=s.extras.find(e=>e.id===id);if(!x)return s
@@ -1147,6 +1356,11 @@ export default function App(){
   const signOut=()=>supabase.auth.signOut()
   const signIn=()=>supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}})
 
+  const upgradeToPro=()=>{
+    upd(s=>{s.is_pro=true;return s})
+    notif('👑 Welcome to PRO! All features unlocked!','levelup')
+  }
+
   const completeOnboarding=({name,avatar,missions})=>{
     const newState={...BLANK(),player:{n:name,av:avatar,t:''},missions}
     setG(newState)
@@ -1187,11 +1401,12 @@ export default function App(){
       </div>
       {/* LEVEL UP */}
       {lvUpAnim&&<LevelUpOverlay data={lvUpAnim}/>}
+      {showPro&&<ProUpgradeModal close={()=>setShowPro(false)} razorpayKey={RAZORPAY_KEY} session={session} G={G} onSuccess={upgradeToPro}/>}
       {/* NAV */}
-      <NavBar G={G} page={page} setPage={setPage} lv={lv} rank={rank} setModal={setModal} signOut={signOut}/>
+      <NavBar G={G} page={page} setPage={setPage} lv={lv} rank={rank} setModal={setModal} signOut={signOut} setShowPro={setShowPro}/>
       {/* PAGES */}
       <div style={{maxWidth:1400,margin:'0 auto',padding:20}}>
-        {page==='dashboard'&&<Dashboard G={G} lv={lv} rank={rank} title={title} xpPct={xpPct} toggleM={toggleM} setPage={setPage} setModal={setModal} goalTab={goalTab} setGoalTab={setGoalTab} incGoal={incGoal} delGoal={delGoal} toggleX={toggleX} delX={delX}/>}
+        {page==='dashboard'&&<Dashboard G={G} lv={lv} rank={rank} title={title} xpPct={xpPct} toggleM={toggleM} delM={delM} setPage={setPage} setModal={setModal} goalTab={goalTab} setGoalTab={setGoalTab} incGoal={incGoal} delGoal={delGoal} toggleX={toggleX} delX={delX} setShowPro={setShowPro}/>}
         {page==='missions'&&<Missions G={G} toggleM={toggleM} delM={delM} setModal={setModal} endDay={endDay} toggleX={toggleX} addX={addX} delX={delX}/>}
         {page==='weekly'&&<Weekly G={G} goalTab={goalTab} setGoalTab={setGoalTab} incGoal={incGoal} delGoal={delGoal} toggleX={toggleX} addX={addX} delX={delX} setModal={setModal}/>}
         {page==='calendar'&&<Calendar G={G} calY={calY} calM={calM} setCalY={setCalY} setCalM={setCalM} setModal={setModal}/>}
@@ -1199,9 +1414,9 @@ export default function App(){
         {page==='profile'&&<ProfilePage G={G} session={session} lv={lv} rank={rank} title={title} xpPct={xpPct} setModal={setModal}/>}
         {page==='community'&&<CommunityPage G={G} session={session} rank={rank} lv={lv}/>}
         {page==='leaderboard'&&<LeaderboardPage session={session}/>}
-        {page==='friends'&&<FriendsPage G={G} session={session}/>}
-        {page==='analytics'&&<AnalyticsPage G={G}/>}
-        {page==='challenge'&&<ChallengePage G={G} session={session} notif={notif}/>}
+        {page==='friends'&&(isPro(G)?<FriendsPage G={G} session={session}/>:<LockedFeature name="Friends System" desc="Add friends, share codes, compete on streaks" setShowPro={setShowPro}/>)}
+        {page==='analytics'&&(isPro(G)?<AnalyticsPage G={G}/>:<LockedFeature name="Analytics" desc="30-day charts, best days, attribute growth" setShowPro={setShowPro}/>)}
+        {page==='challenge'&&(isPro(G)?<ChallengePage G={G} session={session} notif={notif}/>:<LockedFeature name="Weekly Challenge" desc="Vote and compete in community challenges" setShowPro={setShowPro}/>)}
       </div>
       {/* MODALS */}
       {modal&&<ModalHost modal={modal} setModal={setModal} G={G} addM={addM} addGoal={addGoal} addX={addX} updPlayer={updPlayer} buyShop={buyShop} addShopItem={addShopItem} delShopItem={delShopItem} endDay={endDay}/>}
@@ -1259,7 +1474,7 @@ function LevelUpOverlay({data}){
 }
 
 // ── NAV ────────────────────────────────────────────────────────────────────
-function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
+function NavBar({G,page,setPage,lv,rank,setModal,signOut,setShowPro}){
   const tabs=[
     {id:'dashboard',icon:'🏠',label:'Dashboard'},
     {id:'missions',icon:'⚔',label:'Missions'},
@@ -1308,6 +1523,7 @@ function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
         </div>
         <div style={{padding:'14px 16px',borderTop:'1px solid #1e1e35',display:'flex',gap:8}}>
           <button onClick={()=>{setModal({type:'shop'});setSideOpen(false)}} style={{flex:1,padding:'10px',background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:6,color:'#f59e0b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:13,fontWeight:700}}>🏪 SHOP</button>
+          {!isPro(G)&&<button onClick={()=>{setShowPro(true);setSideOpen(false)}} style={{flex:1,padding:'10px',background:'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.2))',border:'1px solid #f59e0b',borderRadius:6,color:'#f59e0b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:12,fontWeight:700}}>👑 PRO</button>}
           <button onClick={signOut} style={{padding:'10px 14px',background:'none',border:'1px solid #1e1e35',borderRadius:6,color:'#64748b',cursor:'pointer',fontFamily:"'Rajdhani',sans-serif",fontSize:13,fontWeight:700}}>OUT</button>
         </div>
       </div>
@@ -1341,6 +1557,8 @@ function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
         <NavStat val={lv} lbl="Level"/>
         <NavStat val={'🔥'+G.streak} lbl="Streak"/>
         <NavStat val={G.gold} lbl="Gold" color="#f59e0b"/>
+        {!isPro(G)&&<button onClick={()=>setShowPro(true)} style={{background:'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.2))',border:'1px solid #f59e0b',borderRadius:4,color:'#f59e0b',padding:'4px 10px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>👑 PRO</button>}
+        {isPro(G)&&<span style={{fontSize:10,color:'#f59e0b',fontFamily:"'Orbitron',monospace",fontWeight:700}}>👑 PRO</span>}
         <button onClick={signOut} style={{background:'none',border:'1px solid #1e1e35',borderRadius:4,color:'#64748b',padding:'4px 8px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif"}}>SIGN OUT</button>
       </div>
     </nav>
@@ -1411,7 +1629,7 @@ function MissionItem({m,onToggle,onDel,am}){
         <span style={{padding:'2px 8px',borderRadius:2,fontSize:11,fontFamily:"'Share Tech Mono',monospace",background:isS?'rgba(239,68,68,0.12)':'rgba(245,158,11,0.1)',border:`1px solid ${isS?'rgba(239,68,68,0.35)':'rgba(245,158,11,0.3)'}`,color:isS?'#fca5a5':'#f59e0b'}}>+{gain} XP{isS?' (×1.5)':''}</span>
         {m.penalty>0&&!m.done&&<span style={{padding:'2px 8px',borderRadius:2,fontSize:11,fontFamily:"'Share Tech Mono',monospace",background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#ef4444'}}>-{m.penalty}</span>}
       </div>
-      <button onClick={e=>{e.stopPropagation();onDel()}} style={{background:'none',border:'none',color:'#334155',cursor:'pointer',fontSize:13,padding:'2px 4px',marginLeft:2}}>✕</button>
+      <button onPointerDown={e=>{e.stopPropagation();e.preventDefault();onDel()}} style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:4,color:'#ef4444',cursor:'pointer',fontSize:14,padding:'6px 10px',marginLeft:4,minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
     </div>
   )
 }
@@ -1526,7 +1744,7 @@ function Radar({G,W=240,H=210}){
 }
 
 // ── DASHBOARD ──────────────────────────────────────────────────────────────
-function Dashboard({G,lv,rank,title,xpPct,toggleM,setPage,setModal,goalTab,setGoalTab,incGoal,delGoal,toggleX,delX}){
+function Dashboard({G,lv,rank,title,xpPct,toggleM,delM,setPage,setModal,goalTab,setGoalTab,incGoal,delGoal,toggleX,delX,setShowPro}){
   const ms=G.missions,dn=ms.filter(m=>m.done),pct=ms.length?Math.round(dn.length/ms.length*100):0
   const pending=ms.filter(m=>!m.done&&!m.pen&&m.penalty>0)
   const msgs=[`${pct}% of today's missions complete.`,G.streak>0?`${G.streak} day streak active. Keep it.`:'Build your streak. Consistency = power.',`Level ${lv} · Rank ${rank.lbl}`,'THE SYSTEM OBSERVES. Complete your missions.']
@@ -1593,7 +1811,7 @@ function Dashboard({G,lv,rank,title,xpPct,toggleM,setPage,setModal,goalTab,setGo
 
       {/* Missions */}
       <Panel title="Today's Missions" style={{marginBottom:12}} action={<Btn sm onClick={()=>setPage('missions')}>VIEW ALL</Btn>}>
-        {ms.length?ms.slice(0,4).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>{}}/>):<div style={{textAlign:'center',padding:12,color:'#334155',fontSize:13}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add</span></div>}
+        {ms.length?ms.slice(0,4).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>delM(m.id)}/>):<div style={{textAlign:'center',padding:12,color:'#334155',fontSize:13}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add</span></div>}
         {ms.length>4&&<div onClick={()=>setPage('missions')} style={{textAlign:'center',padding:6,fontSize:12,color:'#64748b',cursor:'pointer'}}>+{ms.length-4} more →</div>}
       </Panel>
 
@@ -1664,7 +1882,7 @@ function Dashboard({G,lv,rank,title,xpPct,toggleM,setPage,setModal,goalTab,setGo
       {/* MAIN GRID */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 320px',gap:16,marginBottom:20}}>
         <Panel title="Today's Missions" action={<div style={{display:'flex',gap:6,alignItems:'center'}}><span style={{fontSize:11,color:'#64748b',fontFamily:"'Share Tech Mono',monospace"}}>{dn.length}/{ms.length}</span><Btn sm onClick={()=>setPage('missions')}>VIEW ALL</Btn></div>}>
-          {ms.length?ms.slice(0,5).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>{}}/>):<div style={{textAlign:'center',padding:16,color:'#334155',fontSize:13,fontStyle:'italic'}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add some</span></div>}
+          {ms.length?ms.slice(0,5).map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>delM(m.id)}/>):<div style={{textAlign:'center',padding:16,color:'#334155',fontSize:13,fontStyle:'italic'}}>No missions. <span onClick={()=>setPage('missions')} style={{color:'#7c3aed',cursor:'pointer'}}>→ Add some</span></div>}
           {ms.length>5&&<div onClick={()=>setPage('missions')} style={{textAlign:'center',padding:8,fontSize:12,color:'#64748b',cursor:'pointer'}}>+{ms.length-5} more →</div>}
         </Panel>
         <Panel title="This Week" action={<span style={{fontSize:10,color:'#64748b'}}/>}>
@@ -1824,9 +2042,22 @@ function Weekly({G,goalTab,setGoalTab,incGoal,delGoal,toggleX,addX,delX,setModal
         <Panel title="Attribute Growth">
           {Object.keys(G.am).map(k=>{
             const m=G.am[k],v=Math.round((G.attrs[k]||0)*10)/10,p=Math.min(100,G.attrs[k]||0)
-            return<div key={k} style={{marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}><span style={{fontSize:11,color:'#e2e8f0'}}>{m.e} {m.n}</span><span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:11,color:m.c}}>{v}</span></div>
-              <div style={{height:6,background:'#1e1e35',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',width:`${p}%`,background:m.c,borderRadius:3,boxShadow:`0 0 6px ${m.c}`,transition:'width 0.8s'}}/></div>
+            return<div key={k} style={{marginBottom:16,padding:'12px 14px',background:'#13131f',border:'1px solid #1e1e35',borderRadius:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:'1.4rem'}}>{m.e}</span>
+                  <span style={{fontSize:14,fontWeight:700,color:'#e2e8f0',textTransform:'uppercase',letterSpacing:1}}>{m.n}</span>
+                </div>
+                <span style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:700,color:m.c}}>{v}</span>
+              </div>
+              <div style={{height:12,background:'#1e1e35',borderRadius:6,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${p}%`,background:`linear-gradient(90deg,${m.c}99,${m.c})`,borderRadius:6,boxShadow:`0 0 10px ${m.c}`,transition:'width 0.8s'}}/>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:9,color:'#334155'}}>
+                <span>0</span>
+                <span style={{color:m.c,fontSize:10}}>{Math.round(p)}%</span>
+                <span>100</span>
+              </div>
             </div>
           })}
         </Panel>
