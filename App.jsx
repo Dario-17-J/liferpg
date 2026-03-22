@@ -796,6 +796,9 @@ function ChallengePage({G, session, notif}) {
   const [hasVoted, setHasVoted] = useState(false)
   const [loading, setLoading] = useState(true)
   const [participants, setParticipants] = useState(0)
+  const [leaderboard, setLeaderboard] = useState([])
+  const [countdown, setCountdown] = useState('')
+  const [joined, setJoined] = useState(false)
 
   const CHALLENGE_IDEAS = [
     {title:'7-Day Streak Challenge', desc:'Maintain a 7-day streak this week. Complete at least 50% of missions every day.', icon:'🔥', xpReward:300},
@@ -806,8 +809,6 @@ function ChallengePage({G, session, notif}) {
     {title:'Gold Rush', desc:'Earn 200+ gold this week from mission completions.', icon:'🥇', xpReward:200},
   ]
 
-  useEffect(() => { loadChallenge() }, [])
-
   const getWeekId = () => {
     const now = new Date()
     const start = new Date(now)
@@ -815,33 +816,78 @@ function ChallengePage({G, session, notif}) {
     return localDS(start)
   }
 
+  // Countdown to next Monday
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date()
+      const nextMonday = new Date(now)
+      nextMonday.setDate(now.getDate() + (1 + 7 - now.getDay()) % 7 || 7)
+      nextMonday.setHours(0,0,0,0)
+      const diff = nextMonday - now
+      const d = Math.floor(diff/86400000)
+      const h = Math.floor((diff%86400000)/3600000)
+      const m = Math.floor((diff%3600000)/60000)
+      const s = Math.floor((diff%60000)/1000)
+      setCountdown(`${d}d ${h}h ${m}m ${s}s`)
+    }
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  useEffect(() => { loadChallenge() }, [])
+
+  // Auto-activate highest voted challenge if it's Monday
+  const autoActivate = async (weekId, votingChallenges) => {
+    const now = new Date()
+    if (now.getDay() !== 1) return // only on Monday
+    // Sort by votes, then by XP reward as tiebreaker
+    const top = [...votingChallenges].sort((a,b) => {
+      const voteDiff = (b.vote_count||0) - (a.vote_count||0)
+      if (voteDiff !== 0) return voteDiff
+      return (b.xp_reward||0) - (a.xp_reward||0) // tiebreaker: higher XP wins
+    })[0]
+    if (!top) return
+    await supabase.from('challenges').update({status:'active'}).eq('id', top.id)
+    return top
+  }
+
   const loadChallenge = async () => {
     setLoading(true)
     const weekId = getWeekId()
 
-    // Check if this week has an active challenge
     const { data: active } = await supabase.from('challenges')
       .select('*').eq('week_id', weekId).eq('status', 'active').maybeSingle()
 
     if (active) {
       setChallenge(active)
-      // Count participants
       const { count } = await supabase.from('challenge_entries')
         .select('*', {count:'exact'}).eq('challenge_id', active.id)
       setParticipants(count||0)
+      // Load leaderboard
+      const { data: entries } = await supabase.from('challenge_entries')
+        .select('*').eq('challenge_id', active.id).order('joined_at', {ascending:true}).limit(20)
+      setLeaderboard(entries||[])
+      // Check if user joined
+      const myEntry = (entries||[]).find(e => e.user_id === session.user.id)
+      if (myEntry) setJoined(true)
     } else {
-      // Show voting - pick 4 random candidates
       const { data: voting } = await supabase.from('challenges')
         .select('*').eq('week_id', weekId).eq('status', 'voting')
 
       if (voting?.length) {
-        setCandidates(voting)
-        // Check if user voted this week using votes table
+        // Try auto-activate on Monday
+        const activated = await autoActivate(weekId, voting)
+        if (activated) {
+          setChallenge({...activated, status:'active'})
+          setLoading(false)
+          return
+        }
+        setCandidates(voting.sort((a,b)=>(b.vote_count||0)-(a.vote_count||0)))
         const { data: myVote } = await supabase.from('challenge_votes')
           .select('user_id').eq('user_id', session.user.id).eq('week_id', weekId).maybeSingle()
         if (myVote) setHasVoted(true)
       } else {
-        // Generate new candidates for this week
         const shuffled = [...CHALLENGE_IDEAS].sort(()=>Math.random()-0.5).slice(0,4)
         const toInsert = shuffled.map(c => ({
           week_id: weekId, status: 'voting',
@@ -857,92 +903,121 @@ function ChallengePage({G, session, notif}) {
 
   const vote = async (challengeId) => {
     if (hasVoted) return
-
     const weekId = getWeekId()
-
-    // Try insert into votes table first
     const { error: voteError } = await supabase.from('challenge_votes').insert({
-      user_id: session.user.id,
-      challenge_id: challengeId,
-      week_id: weekId
+      user_id: session.user.id, challenge_id: challengeId, week_id: weekId
     })
-
-    if (voteError) {
-      notif('Already voted this week!', 'penalty')
-      setHasVoted(true)
-      return
-    }
-
-    // Vote recorded — now increment count
-    const { data: cur } = await supabase
-      .from('challenges').select('vote_count').eq('id', challengeId).maybeSingle()
-
-    const newCount = (cur?.vote_count || 0) + 1
-    await supabase.from('challenges')
-      .update({ vote_count: newCount })
-      .eq('id', challengeId)
-
+    if (voteError) { notif('Already voted!', 'penalty'); setHasVoted(true); return }
+    const { data: cur } = await supabase.from('challenges').select('vote_count').eq('id', challengeId).maybeSingle()
+    const newCount = (cur?.vote_count||0) + 1
+    await supabase.from('challenges').update({vote_count: newCount}).eq('id', challengeId)
     setHasVoted(true)
     notif('✅ Vote cast!', 'xp')
-    // Update UI immediately without reloading
-    setCandidates(prev => prev.map(c =>
-      c.id === challengeId ? {...c, vote_count: newCount} : c
-    ))
+    setCandidates(prev => prev.map(c => c.id===challengeId ? {...c,vote_count:newCount} : c).sort((a,b)=>(b.vote_count||0)-(a.vote_count||0)))
   }
 
   const joinChallenge = async () => {
-    if (!challenge) return
+    if (!challenge || joined) return
     await supabase.from('challenge_entries').upsert({
       challenge_id: challenge.id, user_id: session.user.id,
       username: G.player?.n||'Hunter', avatar: G.player?.av||'🧑‍💻',
       joined_at: new Date().toISOString(), completed: false
     }, {onConflict: 'challenge_id,user_id'})
     setParticipants(p => p+1)
+    setJoined(true)
+    setLeaderboard(prev => [...prev, {user_id:session.user.id, username:G.player?.n||'Hunter', avatar:G.player?.av||'🧑‍💻', completed:false}])
     notif('⚔️ Joined the challenge!', 'levelup')
   }
+
+  // Countdown display component
+  const CountdownBar = ({label}) => (
+    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', background:'rgba(124,58,237,0.08)', border:'1px solid rgba(124,58,237,0.2)', borderRadius:6, marginBottom:12}}>
+      <span style={{fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:1}}>{label}</span>
+      <span style={{fontFamily:"'Share Tech Mono',monospace", fontSize:13, color:'#a855f7', fontWeight:700}}>⏱ {countdown}</span>
+    </div>
+  )
 
   return (
     <div style={{maxWidth:680, margin:'0 auto'}}>
       {loading && <div style={{textAlign:'center', padding:60, color:'#334155', fontFamily:"'Share Tech Mono',monospace"}}>Loading challenge...</div>}
 
       {!loading && challenge && (
-        <Panel title="This Week's Challenge">
-          <div style={{textAlign:'center', padding:24, background:`rgba(124,58,237,0.06)`, border:'1px solid rgba(124,58,237,0.2)', borderRadius:8, marginBottom:16}}>
-            <div style={{fontSize:'3rem', marginBottom:8}}>{challenge.icon}</div>
-            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.2rem', fontWeight:700, color:'#e2e8f0', marginBottom:8}}>{challenge.title}</div>
-            <div style={{fontSize:13, color:'#94a3b8', marginBottom:16, lineHeight:1.7}}>{challenge.description}</div>
-            <div style={{display:'flex', justifyContent:'center', gap:24, marginBottom:20}}>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#f59e0b'}}>{challenge.xp_reward}</div>
-                <div style={{fontSize:10, color:'#64748b'}}>XP Reward</div>
+        <>
+          <Panel title="⚡ This Week's Challenge" style={{marginBottom:16}}>
+            <CountdownBar label="Challenge ends in"/>
+            <div style={{textAlign:'center', padding:24, background:'rgba(124,58,237,0.06)', border:'1px solid rgba(124,58,237,0.2)', borderRadius:8, marginBottom:16}}>
+              <div style={{fontSize:'3rem', marginBottom:8}}>{challenge.icon}</div>
+              <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.2rem', fontWeight:700, color:'#e2e8f0', marginBottom:8}}>{challenge.title}</div>
+              <div style={{fontSize:13, color:'#94a3b8', marginBottom:16, lineHeight:1.7}}>{challenge.description}</div>
+              <div style={{display:'flex', justifyContent:'center', gap:24, marginBottom:20}}>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#f59e0b'}}>{challenge.xp_reward}</div>
+                  <div style={{fontSize:10, color:'#64748b'}}>XP Reward</div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#06b6d4'}}>{participants}</div>
+                  <div style={{fontSize:10, color:'#64748b'}}>Hunters Joined</div>
+                </div>
               </div>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#06b6d4'}}>{participants}</div>
-                <div style={{fontSize:10, color:'#64748b'}}>Participants</div>
-              </div>
+              {joined
+                ? <div style={{padding:'10px 20px', background:'rgba(16,185,129,0.1)', border:'1px solid #10b981', borderRadius:6, color:'#10b981', fontFamily:"'Orbitron',monospace", fontSize:12}}>✅ YOU JOINED THIS CHALLENGE</div>
+                : <Btn onClick={joinChallenge}>⚔️ JOIN CHALLENGE</Btn>
+              }
             </div>
-            <Btn onClick={joinChallenge}>⚔️ JOIN CHALLENGE</Btn>
-          </div>
-        </Panel>
+          </Panel>
+
+          {/* Leaderboard */}
+          <Panel title="🏆 Challenge Leaderboard">
+            {!leaderboard.length && <div style={{textAlign:'center', padding:20, color:'#334155', fontSize:13}}>No participants yet. Be the first!</div>}
+            {leaderboard.map((e,i) => {
+              const isMe = e.user_id === session.user.id
+              const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`
+              return(
+                <div key={e.user_id} style={{display:'flex', alignItems:'center', gap:12, padding:'10px 12px', background:isMe?'rgba(124,58,237,0.08)':'#13131f', border:`1px solid ${isMe?'rgba(124,58,237,0.3)':'#1e1e35'}`, borderRadius:6, marginBottom:6}}>
+                  <div style={{fontFamily:"'Orbitron',monospace", fontSize:i<3?'1.1rem':'0.8rem', minWidth:28, textAlign:'center'}}>{medal}</div>
+                  <div style={{fontSize:'1.2rem'}}>{e.avatar||'🧑‍💻'}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{e.username||'Hunter'}{isMe?' (You)':''}</div>
+                  </div>
+                  <div style={{fontSize:10, padding:'3px 8px', borderRadius:4, background:e.completed?'rgba(16,185,129,0.1)':'rgba(245,158,11,0.1)', color:e.completed?'#10b981':'#f59e0b', border:`1px solid ${e.completed?'rgba(16,185,129,0.3)':'rgba(245,158,11,0.3)'}`}}>
+                    {e.completed?'✅ DONE':'⏳ IN PROGRESS'}
+                  </div>
+                </div>
+              )
+            })}
+          </Panel>
+        </>
       )}
 
       {!loading && !challenge && candidates.length > 0 && (
-        <Panel title="Vote for This Week's Challenge">
+        <Panel title="🗳 Vote for This Week's Challenge">
+          <CountdownBar label="Voting ends in"/>
           <div style={{fontFamily:"'Share Tech Mono',monospace", fontSize:11, color:'#06b6d4', padding:10, background:'rgba(6,182,212,0.05)', border:'1px solid rgba(6,182,212,0.15)', borderRadius:6, marginBottom:16}}>
-            Vote for the challenge you want this week. Most votes wins!
+            Vote for the challenge you want this week. Highest votes wins and activates Monday!
           </div>
-          {candidates.map(c => (
-            <div key={c.id} onClick={()=>!hasVoted&&vote(c.id)} style={{display:'flex', alignItems:'center', gap:12, padding:14, background:'#13131f', border:`1px solid ${hasVoted?'#1e1e35':'rgba(124,58,237,0.2)'}`, borderRadius:8, marginBottom:10, cursor:hasVoted?'default':'pointer', transition:'all 0.2s', opacity:hasVoted?0.7:1}}>
-              <div style={{fontSize:'1.8rem'}}>{c.icon}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{c.title}</div>
-                <div style={{fontSize:11, color:'#64748b', marginTop:2}}>{c.description}</div>
-                <div style={{fontSize:10, color:'#f59e0b', marginTop:4}}>+{c.xp_reward} XP reward · {c.vote_count||0} votes</div>
+          {candidates.map((c,i) => {
+            const isLeading = i===0 && (c.vote_count||0) > 0
+            return(
+              <div key={c.id} onClick={()=>!hasVoted&&vote(c.id)} style={{display:'flex', alignItems:'center', gap:12, padding:14, background:isLeading?'rgba(124,58,237,0.08)':'#13131f', border:`1px solid ${isLeading?'rgba(124,58,237,0.4)':hasVoted?'#1e1e35':'rgba(124,58,237,0.2)'}`, borderRadius:8, marginBottom:10, cursor:hasVoted?'default':'pointer', transition:'all 0.2s'}}>
+                <div style={{fontSize:'1.8rem'}}>{c.icon}</div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{c.title}</div>
+                    {isLeading && <span style={{fontSize:9, background:'rgba(124,58,237,0.2)', color:'#a855f7', border:'1px solid #7c3aed', borderRadius:3, padding:'1px 5px', fontWeight:700}}>LEADING</span>}
+                  </div>
+                  <div style={{fontSize:11, color:'#64748b', marginTop:2}}>{c.description}</div>
+                  <div style={{display:'flex', alignItems:'center', gap:8, marginTop:6}}>
+                    <div style={{flex:1, height:4, background:'#1e1e35', borderRadius:2, overflow:'hidden'}}>
+                      <div style={{height:'100%', width:`${candidates.reduce((s,x)=>s+(x.vote_count||0),0)>0?Math.round((c.vote_count||0)/candidates.reduce((s,x)=>s+(x.vote_count||0),0)*100):0}%`, background:'#7c3aed', borderRadius:2, transition:'width 0.5s'}}/>
+                    </div>
+                    <span style={{fontSize:10, color:'#f59e0b', fontFamily:"'Share Tech Mono',monospace", whiteSpace:'nowrap'}}>+{c.xp_reward}XP · {c.vote_count||0} votes</span>
+                  </div>
+                </div>
+                {!hasVoted && <div style={{fontSize:10, color:'#a855f7', border:'1px solid #7c3aed', borderRadius:4, padding:'6px 10px', fontWeight:700, flexShrink:0}}>VOTE</div>}
               </div>
-              {!hasVoted && <div style={{fontSize:10, color:'#a855f7', border:'1px solid #7c3aed', borderRadius:4, padding:'4px 8px', fontWeight:700}}>VOTE</div>}
-            </div>
-          ))}
-          {hasVoted && <div style={{textAlign:'center', fontSize:12, color:'#64748b', marginTop:8, fontStyle:'italic'}}>Vote cast! Challenge activates Monday.</div>}
+            )
+          })}
+          {hasVoted && <div style={{textAlign:'center', padding:10, background:'rgba(16,185,129,0.05)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:6, fontSize:12, color:'#10b981', marginTop:8}}>✅ Vote cast! The highest voted challenge activates automatically on Monday.</div>}
         </Panel>
       )}
     </div>
