@@ -6,7 +6,7 @@ import { supabase } from './supabase.js'
 const FREE_MISSION_LIMIT = 5
 const PRO_MONTHLY = 54
 const PRO_LIFETIME = 999
-const isPro = (G) => G?.is_pro === true
+const isPro = (G) => true // TODO: restore to G?.is_pro === true after Razorpay setup
 const LXP=[0,300,700,1300,2100,3200,4600,6500,9000,12000,16000,21000,27000,34000,43000,54000,67000,83000,102000,125000,150000]
 const DEFAM={physical:{n:'Physical',d:'Strength, fitness & body health',e:'💪',c:'#ef4444'},mental:{n:'Mental',d:'Focus, learning & intelligence',e:'🧠',c:'#7c3aed'},social:{n:'Social',d:'Relationships & communication',e:'🌐',c:'#06b6d4'},financial:{n:'Financial',d:'Money, career & wealth',e:'💰',c:'#f59e0b'},creative:{n:'Creative',d:'Art, ideas & expression',e:'🎨',c:'#ec4899'},discipline:{n:'Discipline',d:'Consistency & willpower',e:'⚡',c:'#10b981'}}
 const DEFSHOP=[
