@@ -57,12 +57,452 @@ const localDS=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-
 const wkStr=()=>{const d=new Date(),dy=d.getDay(),m=new Date(d);m.setDate(d.getDate()-(dy===0?6:dy-1));return localDS(m);}
 const BLANK=()=>({player:{n:'Hunter',av:'🧑‍💻',t:''},xp:0,gold:0,txp:0,streak:0,best:0,lastDay:null,missions:[{id:1,n:'Morning Workout',tier:'S',cat:'physical',xp:100,penalty:50,done:false,pen:false},{id:2,n:'Deep Work / Study (2 hrs)',tier:'S',cat:'mental',xp:100,penalty:50,done:false,pen:false},{id:3,n:'Drink 2L Water',tier:'A',cat:'physical',xp:25,penalty:0,done:false,pen:false},{id:4,n:'Read 20 min',tier:'A',cat:'mental',xp:50,penalty:10,done:false,pen:false},{id:5,n:'No social media before noon',tier:'A',cat:'discipline',xp:50,penalty:25,done:false,pen:false}],extras:[{id:10,n:'Learn something new',done:false,week:wkStr()},{id:11,n:'Reach out to someone you care about',done:false,week:wkStr()}],goals:[{id:20,n:'Build a consistent streak',type:'short',target:7,prog:0,created:td()},{id:21,n:'Level up to Challenger',type:'long',target:20,prog:0,created:td()}],history:{},attrs:{physical:0,mental:0,social:0,financial:0,creative:0,discipline:0},am:JSON.parse(JSON.stringify(DEFAM)),shop:DEFSHOP.map(x=>({...x}))})
 
+
+// ── PHASE 2: ONBOARDING ────────────────────────────────────────────────────
+const MISSION_PACKS = {
+  fitness: {
+    name: 'Fitness Pack', icon: '💪', color: '#ef4444',
+    missions: [
+      {n:'Morning Workout (30 min)',tier:'S',cat:'physical',xp:100,penalty:50},
+      {n:'Evening Walk (20 min)',tier:'A',cat:'physical',xp:50,penalty:10},
+      {n:'Drink 2L Water',tier:'A',cat:'physical',xp:25,penalty:0},
+      {n:'No Junk Food Today',tier:'A',cat:'physical',xp:50,penalty:25},
+    ]
+  },
+  student: {
+    name: 'Student Pack', icon: '📚', color: '#7c3aed',
+    missions: [
+      {n:'Study Session (2 hrs)',tier:'S',cat:'mental',xp:100,penalty:50},
+      {n:'Read 20 min',tier:'A',cat:'mental',xp:50,penalty:10},
+      {n:'No phone during study',tier:'A',cat:'discipline',xp:50,penalty:25},
+      {n:'Revise yesterday notes',tier:'A',cat:'mental',xp:25,penalty:0},
+    ]
+  },
+  developer: {
+    name: 'Developer Pack', icon: '💻', color: '#06b6d4',
+    missions: [
+      {n:'Code for 2 hrs',tier:'S',cat:'mental',xp:100,penalty:50},
+      {n:'Learn something new (30 min)',tier:'A',cat:'mental',xp:50,penalty:10},
+      {n:'No social media before noon',tier:'A',cat:'discipline',xp:50,penalty:25},
+      {n:'Exercise break (15 min)',tier:'A',cat:'physical',xp:25,penalty:0},
+    ]
+  },
+  entrepreneur: {
+    name: 'Entrepreneur Pack', icon: '🚀', color: '#f59e0b',
+    missions: [
+      {n:'Deep Work (2 hrs no distraction)',tier:'S',cat:'mental',xp:100,penalty:50},
+      {n:'Review finances / budget',tier:'A',cat:'financial',xp:50,penalty:10},
+      {n:'Network / reach out to 1 person',tier:'A',cat:'social',xp:50,penalty:10},
+      {n:'Reflect & plan tomorrow',tier:'A',cat:'discipline',xp:25,penalty:0},
+    ]
+  },
+}
+
+function OnboardingScreen({session, onComplete}) {
+  const [step, setStep] = useState(0)
+  const [name, setName] = useState(session?.user?.user_metadata?.full_name?.split(' ')[0] || '')
+  const [avatar, setAvatar] = useState('🧑‍💻')
+  const [selectedPack, setSelectedPack] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const finish = async () => {
+    setLoading(true)
+    const missions = selectedPack
+      ? MISSION_PACKS[selectedPack].missions.map((m,i) => ({...m, id: Date.now()+i, done: false, pen: false}))
+      : [{id:1,n:'Morning Workout',tier:'S',cat:'physical',xp:100,penalty:50,done:false,pen:false},
+         {id:2,n:'Deep Work (2 hrs)',tier:'S',cat:'mental',xp:100,penalty:50,done:false,pen:false},
+         {id:3,n:'No social media before noon',tier:'A',cat:'discipline',xp:50,penalty:25,done:false,pen:false}]
+    onComplete({name: name.trim() || 'Hunter', avatar, missions})
+    setLoading(false)
+  }
+
+  const steps = [
+    // Step 0 - Welcome
+    <div key={0} style={{textAlign:'center'}}>
+      <div style={{fontSize:'4rem', marginBottom:16}}>⚡</div>
+      <div style={{fontFamily:"'Orbitron',monospace", fontSize:'2rem', fontWeight:900, background:'linear-gradient(135deg,#a855f7,#06b6d4)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', marginBottom:8}}>LIFE RPG</div>
+      <div style={{fontSize:14, color:'#64748b', marginBottom:24, lineHeight:1.7}}>
+        The System has detected a new hunter.<br/>
+        Your real life is now a game.<br/>
+        Complete missions. Build streaks. Level up.
+      </div>
+      <div style={{padding:16, background:'rgba(124,58,237,0.08)', border:'1px solid rgba(124,58,237,0.2)', borderRadius:8, marginBottom:24, textAlign:'left'}}>
+        {[
+          {icon:'⚔️', text:'Daily missions that match your goals'},
+          {icon:'🔥', text:'Streaks that track your consistency'},
+          {icon:'👑', text:'10 ranks from DORMANT to MONARCH'},
+          {icon:'🏪', text:'Reward yourself with gold you earn'},
+        ].map((x,i) => <div key={i} style={{display:'flex', alignItems:'center', gap:10, marginBottom:i<3?10:0, fontSize:13, color:'#e2e8f0'}}>
+          <span>{x.icon}</span><span>{x.text}</span>
+        </div>)}
+      </div>
+      <button onClick={()=>setStep(1)} style={{width:'100%', padding:'14px', background:'linear-gradient(135deg,#7c3aed,#a855f7)', border:'none', borderRadius:6, color:'white', fontFamily:"'Orbitron',monospace", fontSize:14, fontWeight:700, letterSpacing:2, cursor:'pointer'}}>
+        BEGIN YOUR JOURNEY →
+      </button>
+    </div>,
+
+    // Step 1 - Name & Avatar
+    <div key={1}>
+      <div style={{textAlign:'center', marginBottom:24}}>
+        <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1rem', color:'#a855f7', marginBottom:8}}>STEP 1 OF 3</div>
+        <div style={{fontSize:18, fontWeight:700, color:'#e2e8f0'}}>Who are you, Hunter?</div>
+      </div>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:11, textTransform:'uppercase', letterSpacing:1.5, color:'#64748b', marginBottom:6}}>Your Name</div>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Enter your name..." style={{background:'#13131f',border:'1px solid #1e1e35',borderRadius:4,padding:'10px 12px',color:'#e2e8f0',fontFamily:"'Rajdhani',sans-serif",fontSize:16,outline:'none',width:'100%'}}/>
+      </div>
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:11, textTransform:'uppercase', letterSpacing:1.5, color:'#64748b', marginBottom:10}}>Choose Your Avatar</div>
+        <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+          {AVTS.map(a => <button key={a} onClick={()=>setAvatar(a)} style={{background:a===avatar?'rgba(124,58,237,0.3)':'#13131f', border:`2px solid ${a===avatar?'#7c3aed':'#1e1e35'}`, borderRadius:8, padding:'8px 10px', fontSize:'1.4rem', cursor:'pointer', transition:'all 0.2s'}}>{a}</button>)}
+        </div>
+      </div>
+      <div style={{display:'flex', gap:10}}>
+        <button onClick={()=>setStep(0)} style={{flex:1, padding:'12px', background:'none', border:'1px solid #1e1e35', borderRadius:6, color:'#64748b', fontFamily:"'Rajdhani',sans-serif", fontSize:13, cursor:'pointer', fontWeight:700, letterSpacing:1}}>← BACK</button>
+        <button onClick={()=>setStep(2)} disabled={!name.trim()} style={{flex:2, padding:'12px', background:name.trim()?'#7c3aed':'#1e1e35', border:'none', borderRadius:6, color:'white', fontFamily:"'Orbitron',monospace", fontSize:13, fontWeight:700, letterSpacing:1, cursor:name.trim()?'pointer':'not-allowed'}}>NEXT →</button>
+      </div>
+    </div>,
+
+    // Step 2 - Mission Pack
+    <div key={2}>
+      <div style={{textAlign:'center', marginBottom:20}}>
+        <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1rem', color:'#a855f7', marginBottom:8}}>STEP 2 OF 3</div>
+        <div style={{fontSize:18, fontWeight:700, color:'#e2e8f0'}}>Choose your mission pack</div>
+        <div style={{fontSize:12, color:'#64748b', marginTop:4}}>You can customize everything later</div>
+      </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16}}>
+        {Object.entries(MISSION_PACKS).map(([key, pack]) => (
+          <div key={key} onClick={()=>setSelectedPack(selectedPack===key?null:key)}
+            style={{padding:14, background:selectedPack===key?`${pack.color}15`:'#13131f', border:`2px solid ${selectedPack===key?pack.color:'#1e1e35'}`, borderRadius:8, cursor:'pointer', transition:'all 0.2s', textAlign:'center'}}>
+            <div style={{fontSize:'2rem', marginBottom:6}}>{pack.icon}</div>
+            <div style={{fontSize:12, fontWeight:700, color:selectedPack===key?pack.color:'#e2e8f0', textTransform:'uppercase', letterSpacing:1}}>{pack.name}</div>
+            <div style={{fontSize:10, color:'#64748b', marginTop:4}}>{pack.missions.length} missions</div>
+          </div>
+        ))}
+      </div>
+      {selectedPack && (
+        <div style={{padding:12, background:'#13131f', border:'1px solid #1e1e35', borderRadius:6, marginBottom:16}}>
+          {MISSION_PACKS[selectedPack].missions.map((m,i) => (
+            <div key={i} style={{fontSize:11, color:'#94a3b8', padding:'3px 0', borderBottom:i<MISSION_PACKS[selectedPack].missions.length-1?'1px solid #1e1e35':undefined}}>
+              {m.tier==='S'?'🔴':'🟡'} {m.n} · +{m.xp}XP
+            </div>
+          ))}
+        </div>
+      )}
+      {!selectedPack && <div style={{fontSize:11, color:'#64748b', textAlign:'center', marginBottom:16, fontStyle:'italic'}}>No pack selected — you'll start with default missions</div>}
+      <div style={{display:'flex', gap:10}}>
+        <button onClick={()=>setStep(1)} style={{flex:1, padding:'12px', background:'none', border:'1px solid #1e1e35', borderRadius:6, color:'#64748b', fontFamily:"'Rajdhani',sans-serif", fontSize:13, cursor:'pointer', fontWeight:700, letterSpacing:1}}>← BACK</button>
+        <button onClick={()=>setStep(3)} style={{flex:2, padding:'12px', background:'#7c3aed', border:'none', borderRadius:6, color:'white', fontFamily:"'Orbitron',monospace", fontSize:13, fontWeight:700, letterSpacing:1, cursor:'pointer'}}>NEXT →</button>
+      </div>
+    </div>,
+
+    // Step 3 - Ready
+    <div key={3} style={{textAlign:'center'}}>
+      <div style={{fontSize:'3rem', marginBottom:12}}>{avatar}</div>
+      <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:900, color:'#f59e0b', marginBottom:4}}>{name}</div>
+      <div style={{fontSize:12, color:'#64748b', marginBottom:4}}>💀 DORMANT I — The Sleeper</div>
+      <div style={{fontSize:11, color:'#334155', marginBottom:24}}>Your journey to MONARCH begins now.</div>
+      <div style={{padding:16, background:'rgba(16,185,129,0.05)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:8, marginBottom:24, textAlign:'left'}}>
+        <div style={{fontSize:12, fontWeight:700, color:'#10b981', marginBottom:10, textTransform:'uppercase', letterSpacing:1}}>✅ You are set up with:</div>
+        {[
+          selectedPack ? `${MISSION_PACKS[selectedPack].missions.length} missions from ${MISSION_PACKS[selectedPack].name}` : '3 default missions to start',
+          'Cloud save — your data is safe',
+          'Full rank system from DORMANT → MONARCH',
+          'Reward shop with gold you earn',
+        ].map((x,i) => <div key={i} style={{fontSize:11, color:'#94a3b8', marginBottom:6}}>• {x}</div>)}
+      </div>
+      <button onClick={finish} disabled={loading} style={{width:'100%', padding:'14px', background:'linear-gradient(135deg,#7c3aed,#a855f7)', border:'none', borderRadius:6, color:'white', fontFamily:"'Orbitron',monospace", fontSize:14, fontWeight:700, letterSpacing:2, cursor:'pointer'}}>
+        {loading ? 'INITIALIZING...' : '⚡ ENTER THE SYSTEM'}
+      </button>
+    </div>
+  ]
+
+  return (
+    <div style={{minHeight:'100vh', background:'#0a0a0f', display:'flex', alignItems:'center', justifyContent:'center', padding:20}}>
+      <div style={{background:'#0f0f1a', border:'1px solid #1e1e35', borderRadius:12, padding:32, width:'100%', maxWidth:480, boxShadow:'0 0 60px rgba(124,58,237,0.2)'}}>
+        <div style={{display:'flex', gap:4, marginBottom:24}}>
+          {[0,1,2,3].map(i => <div key={i} style={{flex:1, height:3, borderRadius:2, background:i<=step?'#7c3aed':'#1e1e35', transition:'background 0.3s'}}/>)}
+        </div>
+        {steps[step]}
+      </div>
+    </div>
+  )
+}
+
+// ── PHASE 2: PROFILE PAGE ──────────────────────────────────────────────────
+function ProfilePage({G, session, lv, rank, title, xpPct, setModal}) {
+  const achievements = getAchievements(G, lv)
+  const clx = getLvXP(lv), nlx = getLvXP(lv+1)
+
+  return (
+    <div style={{maxWidth:800, margin:'0 auto'}}>
+      {/* Profile Hero */}
+      <div style={{background:'#0f0f1a', border:'1px solid #1e1e35', borderRadius:8, padding:28, marginBottom:16, position:'relative', overflow:'hidden'}}>
+        <div style={{position:'absolute', inset:0, background:`radial-gradient(circle at 20% 50%, rgba(124,58,237,0.08), transparent 60%)`, pointerEvents:'none'}}/>
+        <div style={{display:'flex', alignItems:'center', gap:20, marginBottom:20}}>
+          <div onClick={()=>setModal({type:'player'})} style={{width:80, height:80, borderRadius:12, background:'linear-gradient(135deg,#1a0a3e,#0a1a3e)', border:'2px solid #7c3aed', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'2.5rem', cursor:'pointer', flexShrink:0, boxShadow:'0 0 20px rgba(124,58,237,0.3)'}}>
+            {G.player.av}
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.4rem', fontWeight:700, color:'#e2e8f0', marginBottom:4}}>{G.player.n}</div>
+            <RankBadge rank={rank}/>
+            <div style={{fontSize:12, color:'#64748b', marginTop:6, fontStyle:'italic'}}>{G.player.t || title.split('—')[0].trim()}</div>
+          </div>
+          <div style={{textAlign:'right', flexShrink:0}}>
+            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'2rem', fontWeight:900, color:'#f59e0b'}}>LV.{lv}</div>
+            <div style={{fontSize:10, color:'#64748b', textTransform:'uppercase', letterSpacing:1}}>Level</div>
+          </div>
+        </div>
+        {/* XP Bar */}
+        <div style={{marginBottom:4, display:'flex', justifyContent:'space-between', fontSize:11, color:'#64748b'}}>
+          <span>Level {lv}</span>
+          <span style={{fontFamily:"'Share Tech Mono',monospace", color:'#a855f7'}}>{G.xp} / {nlx} XP</span>
+        </div>
+        <div style={{height:8, background:'#13131f', border:'1px solid #1e1e35', borderRadius:4, overflow:'hidden'}}>
+          <div style={{height:'100%', width:`${Math.min(100,xpPct)}%`, background:'linear-gradient(90deg,#7c3aed,#a855f7)', borderRadius:4, transition:'width 0.8s', boxShadow:'0 0 8px rgba(124,58,237,0.6)'}}/>
+        </div>
+        {/* Stats Row */}
+        <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginTop:20}}>
+          {[
+            {v:G.txp||0, l:'Total XP', c:'#a855f7'},
+            {v:G.gold, l:'Gold', c:'#f59e0b'},
+            {v:G.streak+'🔥', l:'Streak', c:'#f97316'},
+            {v:G.best, l:'Best Streak', c:'#06b6d4'},
+          ].map((s,i) => <div key={i} style={{textAlign:'center', padding:10, background:'#13131f', border:'1px solid #1e1e35', borderRadius:6}}>
+            <div style={{fontFamily:"'Orbitron',monospace", fontSize:'1.1rem', fontWeight:700, color:s.c}}>{s.v}</div>
+            <div style={{fontSize:9, textTransform:'uppercase', letterSpacing:1.5, color:'#64748b', marginTop:2}}>{s.l}</div>
+          </div>)}
+        </div>
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+        {/* Achievements */}
+        <Panel title="Achievements">
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+            {achievements.map((a,i) => (
+              <div key={i} style={{padding:10, background:a.earned?`${a.color}15`:'#13131f', border:`1px solid ${a.earned?a.color:'#1e1e35'}`, borderRadius:6, textAlign:'center', opacity:a.earned?1:0.4}}>
+                <div style={{fontSize:'1.5rem', marginBottom:4}}>{a.earned?a.icon:'🔒'}</div>
+                <div style={{fontSize:10, fontWeight:700, color:a.earned?a.color:'#334155', textTransform:'uppercase', letterSpacing:1}}>{a.name}</div>
+                <div style={{fontSize:9, color:'#64748b', marginTop:2}}>{a.desc}</div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        {/* Rank Progression */}
+        <Panel title="Rank Journey">
+          <div style={{overflowY:'auto', maxHeight:300}}>
+            {RANK_TIERS.map((tier) => {
+              const isActive = rank.base === tier.lbl
+              const isPast = lv > tier.max
+              const rs = rankStyles[tier.cls] || {}
+              return (
+                <div key={tier.lbl} style={{display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:isActive?`rgba(124,58,237,0.08)`:'transparent', borderRadius:6, marginBottom:4, border:isActive?'1px solid rgba(124,58,237,0.3)':'1px solid transparent'}}>
+                  <div style={{fontSize:'1.1rem', opacity:isPast||isActive?1:0.3}}>{RANK_ICONS[tier.lbl]}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:11, fontWeight:700, color:isActive?'#a855f7':isPast?'#64748b':'#334155', textTransform:'uppercase', letterSpacing:1}}>
+                      {tier.lbl} {tier.sub.filter(Boolean).join(' / ')}
+                    </div>
+                    <div style={{fontSize:9, color:'#334155'}}>Level {tier.min}{tier.max>tier.min?`–${tier.max}`:''}</div>
+                  </div>
+                  {isActive && <span style={{fontSize:9, color:'#a855f7', fontFamily:"'Share Tech Mono',monospace"}}>◄ YOU</span>}
+                  {isPast && <span style={{fontSize:12, color:'#10b981'}}>✓</span>}
+                </div>
+              )
+            })}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  )
+}
+
+function getAchievements(G, lv) {
+  return [
+    {name:'First Blood', icon:'⚔️', desc:'Complete first mission', color:'#ef4444', earned: G.txp>0},
+    {name:'On Streak', icon:'🔥', desc:'3 day streak', color:'#f97316', earned: G.streak>=3||G.best>=3},
+    {name:'Week Warrior', icon:'🏆', desc:'7 day streak', color:'#f59e0b', earned: G.streak>=7||G.best>=7},
+    {name:'Awakened', icon:'👁', desc:'Reach level 2', color:'#86efac', earned: lv>=2},
+    {name:'Challenger', icon:'⚔️', desc:'Reach level 6', color:'#67e8f9', earned: lv>=6},
+    {name:'Gold Hoarder', icon:'💰', desc:'Earn 500 gold', color:'#f59e0b', earned: (G.gold||0)>=500},
+    {name:'Phantom', icon:'👻', desc:'Reach level 10', color:'#fda4af', earned: lv>=10},
+    {name:'Monarch', icon:'☄️', desc:'Reach level 20', color:'#fef08a', earned: lv>=20},
+  ]
+}
+
+// ── PHASE 2: COMMUNITY / STORIES ──────────────────────────────────────────
+function CommunityPage({G, session, rank, lv}) {
+  const [stories, setStories] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [likedIds, setLikedIds] = useState(new Set())
+
+  useEffect(() => {
+    loadStories()
+  }, [])
+
+  const loadStories = async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('stories')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (data) setStories(data)
+
+    // load user's likes
+    if (session) {
+      const { data: likes } = await supabase
+        .from('story_likes')
+        .select('story_id')
+        .eq('user_id', session.user.id)
+      if (likes) setLikedIds(new Set(likes.map(l => l.story_id)))
+    }
+    setLoading(false)
+  }
+
+  const toggleLike = async (storyId) => {
+    if (!session) return
+    const liked = likedIds.has(storyId)
+    if (liked) {
+      await supabase.from('story_likes').delete().eq('story_id', storyId).eq('user_id', session.user.id)
+      await supabase.from('stories').update({likes: Math.max(0, (stories.find(s=>s.id===storyId)?.likes||1)-1)}).eq('id', storyId)
+      setLikedIds(prev => { const n=new Set(prev); n.delete(storyId); return n })
+      setStories(prev => prev.map(s => s.id===storyId ? {...s, likes: Math.max(0,(s.likes||1)-1)} : s))
+    } else {
+      await supabase.from('story_likes').insert({story_id: storyId, user_id: session.user.id})
+      await supabase.from('stories').update({likes: (stories.find(s=>s.id===storyId)?.likes||0)+1}).eq('id', storyId)
+      setLikedIds(prev => new Set([...prev, storyId]))
+      setStories(prev => prev.map(s => s.id===storyId ? {...s, likes: (s.likes||0)+1} : s))
+    }
+  }
+
+  const deleteStory = async (storyId) => {
+    await supabase.from('stories').delete().eq('id', storyId)
+    setStories(prev => prev.filter(s => s.id !== storyId))
+  }
+
+  const timeAgo = (ts) => {
+    const diff = Date.now() - new Date(ts).getTime()
+    const mins = Math.floor(diff/60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins/60)
+    if (hrs < 24) return `${hrs}h ago`
+    return `${Math.floor(hrs/24)}d ago`
+  }
+
+  return (
+    <div style={{maxWidth:680, margin:'0 auto'}}>
+      <Panel title="Community Feed" action={<span style={{fontSize:10, color:'#64748b'}}>Achievements posted by hunters</span>}>
+        {loading && <div style={{textAlign:'center', padding:40, color:'#334155', fontFamily:"'Share Tech Mono',monospace"}}>Loading stories...</div>}
+        {!loading && !stories.length && (
+          <div style={{textAlign:'center', padding:40}}>
+            <div style={{fontSize:'2rem', marginBottom:8}}>👻</div>
+            <div style={{color:'#334155', fontSize:13}}>No stories yet. Level up to post the first one!</div>
+          </div>
+        )}
+        {stories.map(s => {
+          const isOwn = session?.user?.id === s.user_id
+          const liked = likedIds.has(s.id)
+          const typeColors = {levelup:'#f59e0b', streak:'#f97316', perfect:'#10b981', goal:'#06b6d4'}
+          const typeIcons = {levelup:'⚡', streak:'🔥', perfect:'✅', goal:'🎯'}
+          return (
+            <div key={s.id} style={{padding:16, background:'#13131f', border:'1px solid #1e1e35', borderRadius:8, marginBottom:12}}>
+              <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:10}}>
+                <div style={{fontSize:'1.5rem'}}>{s.avatar||'🧑‍💻'}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13, fontWeight:700, color:'#e2e8f0'}}>{s.username||'Hunter'}</div>
+                  <div style={{fontSize:10, color:'#334155'}}>{s.rank_label} · {timeAgo(s.created_at)}</div>
+                </div>
+                <div style={{fontSize:10, padding:'3px 8px', borderRadius:10, background:`${typeColors[s.type]||'#7c3aed'}22`, color:typeColors[s.type]||'#a855f7', border:`1px solid ${typeColors[s.type]||'#7c3aed'}44`}}>
+                  {typeIcons[s.type]||'⚡'} {s.type?.toUpperCase()}
+                </div>
+              </div>
+              <div style={{fontFamily:"'Orbitron',monospace", fontSize:'0.9rem', fontWeight:700, color:'#e2e8f0', marginBottom:4}}>{s.title}</div>
+              <div style={{fontSize:12, color:'#64748b', marginBottom:10}}>{s.body}</div>
+              <div style={{display:'flex', alignItems:'center', gap:10}}>
+                <button onClick={()=>toggleLike(s.id)} style={{background:'none', border:`1px solid ${liked?'#ef4444':'#1e1e35'}`, borderRadius:20, padding:'4px 12px', color:liked?'#ef4444':'#64748b', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', gap:4}}>
+                  {liked?'❤️':'🤍'} {s.likes||0}
+                </button>
+                {isOwn && <button onClick={()=>deleteStory(s.id)} style={{background:'none', border:'1px solid #1e1e35', borderRadius:20, padding:'4px 10px', color:'#334155', cursor:'pointer', fontSize:11}}>Delete</button>}
+              </div>
+            </div>
+          )
+        })}
+      </Panel>
+    </div>
+  )
+}
+
+// ── PHASE 2: LEADERBOARD ──────────────────────────────────────────────────
+function LeaderboardPage({session}) {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('xp')
+
+  useEffect(() => { loadUsers() }, [tab])
+
+  const loadUsers = async () => {
+    setLoading(true)
+    const col = tab==='xp' ? 'xp' : tab==='streak' ? 'streak' : 'level'
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .order(col, { ascending: false })
+      .limit(50)
+    if (data) setUsers(data)
+    setLoading(false)
+  }
+
+  const myId = session?.user?.id
+  const myRank = users.findIndex(u => u.id === myId) + 1
+
+  return (
+    <div style={{maxWidth:680, margin:'0 auto'}}>
+      <Panel title="Global Leaderboard" action={
+        <div style={{display:'flex', gap:4}}>
+          {[{k:'xp',l:'XP'},{k:'streak',l:'Streak'},{k:'level',l:'Level'}].map(t => (
+            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:'4px 10px', background:tab===t.k?'rgba(124,58,237,0.2)':'none', border:`1px solid ${tab===t.k?'#7c3aed':'#1e1e35'}`, borderRadius:4, color:tab===t.k?'#a855f7':'#64748b', fontSize:11, cursor:'pointer', fontFamily:"'Rajdhani',sans-serif", fontWeight:700}}>{t.l}</button>
+          ))}
+        </div>
+      }>
+        {myRank>0 && <div style={{padding:'8px 12px', background:'rgba(124,58,237,0.08)', border:'1px solid rgba(124,58,237,0.2)', borderRadius:6, marginBottom:12, fontSize:12, color:'#a855f7', textAlign:'center'}}>
+          You are ranked #{myRank} globally
+        </div>}
+        {loading && <div style={{textAlign:'center', padding:40, color:'#334155', fontFamily:"'Share Tech Mono',monospace"}}>Loading...</div>}
+        {users.map((u, i) => {
+          const isMe = u.id === myId
+          const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`
+          return (
+            <div key={u.id} style={{display:'flex', alignItems:'center', gap:12, padding:'10px 12px', background:isMe?'rgba(124,58,237,0.08)':'#13131f', border:`1px solid ${isMe?'rgba(124,58,237,0.3)':'#1e1e35'}`, borderRadius:6, marginBottom:6}}>
+              <div style={{fontFamily:"'Orbitron',monospace", fontSize:i<3?'1.2rem':'0.8rem', minWidth:32, textAlign:'center', color:i<3?undefined:'#64748b'}}>{medal}</div>
+              <div style={{fontSize:'1.3rem'}}>{u.avatar||'🧑‍💻'}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13, fontWeight:700, color:isMe?'#a855f7':'#e2e8f0'}}>{u.username||'Hunter'}{isMe?' (You)':''}</div>
+                <div style={{fontSize:10, color:'#64748b'}}>{u.rank_label||'DORMANT I'}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontFamily:"'Orbitron',monospace", fontSize:'0.9rem', fontWeight:700, color:'#f59e0b'}}>
+                  {tab==='xp'?`${u.xp||0} XP`:tab==='streak'?`${u.streak||0}🔥`:`LV.${u.level||0}`}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+        {!loading && !users.length && <div style={{textAlign:'center', padding:40, color:'#334155'}}>No hunters yet. Be the first!</div>}
+      </Panel>
+    </div>
+  )
+}
+
+
 // ── MAIN APP ───────────────────────────────────────────────────────────────
 export default function App(){
   const [session,setSession]=useState(null)
   const [loading,setLoading]=useState(true)
   const [G,setG]=useState(null) // game state
   const [page,setPage]=useState('dashboard')
+  const [onboarding,setOnboarding]=useState(false)
   const [notifs,setNotifs]=useState([])
   const [modal,setModal]=useState(null)
   const [calY,setCalY]=useState(new Date().getFullYear())
@@ -92,8 +532,10 @@ export default function App(){
           if(!s.shop)s.shop=DEFSHOP.map(x=>({...x}))
           Object.keys(DEFAM).forEach(k=>{if(s.attrs[k]===undefined)s.attrs[k]=0;if(!s.am[k])s.am[k]=JSON.parse(JSON.stringify(DEFAM[k]))})
           setG(s)
+          setOnboarding(false)
         } else {
-          setG(BLANK())
+          setOnboarding(true) // new user — show onboarding
+          setG(null)
         }
         setLoading(false)
       })
@@ -105,6 +547,21 @@ export default function App(){
     clearTimeout(saveTimer.current)
     saveTimer.current=setTimeout(async()=>{
       await supabase.from('game_state').upsert({user_id:session.user.id,state,updated_at:new Date().toISOString()},{onConflict:'user_id'})
+      // sync public profile for leaderboard
+      const lv=getLv(state.xp), rank=getRank(lv)
+      await supabase.from('profiles').upsert({
+        id:session.user.id,
+        username:state.player?.n||'Hunter',
+        avatar:state.player?.av||'🧑‍💻',
+        title:state.player?.t||'',
+        xp:state.xp||0,
+        gold:state.gold||0,
+        streak:state.streak||0,
+        best_streak:state.best||0,
+        level:lv,
+        rank_label:rank.lbl,
+        updated_at:new Date().toISOString()
+      },{onConflict:'id'})
     },800)
   }
 
@@ -148,8 +605,14 @@ export default function App(){
   const checkLvUp=(oldXp,newXp)=>{
     const pl=getLv(oldXp),cl=getLv(newXp)
     if(cl>pl){
-      setLvUpAnim({from:pl,to:cl,rank:getRank(cl),title:getTitle(cl)})
+      const newRank=getRank(cl)
+      setLvUpAnim({from:pl,to:cl,rank:newRank,title:getTitle(cl)})
       setTimeout(()=>setLvUpAnim(null),3500)
+      // auto post to community
+      if(G){
+        const nm=G.player?.n||'Hunter'
+        postStory('levelup',`${nm} reached Level ${cl}!`,`Just hit ${newRank.icon} ${newRank.lbl} rank. DORMANT to MONARCH — the grind continues. 🔥`)
+      }
       return(cl-pl)*50
     }
     return 0
@@ -237,8 +700,32 @@ export default function App(){
   const signOut=()=>supabase.auth.signOut()
   const signIn=()=>supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}})
 
+  const completeOnboarding=({name,avatar,missions})=>{
+    const newState={...BLANK(),player:{n:name,av:avatar,t:''},missions}
+    setG(newState)
+    setOnboarding(false)
+    save(newState)
+  }
+
+  // Post achievement story to community
+  const postStory=async(type,title,body)=>{
+    if(!session||!G)return
+    const lv=getLv(G.xp),rank=getRank(lv)
+    await supabase.from('stories').insert({
+      user_id:session.user.id,
+      username:G.player?.n||'Hunter',
+      avatar:G.player?.av||'🧑‍💻',
+      type,title,body,
+      rank_label:rank.lbl,
+      xp:G.xp||0,
+      likes:0
+    })
+    notif('⚡ Achievement posted to community!','levelup')
+  }
+
   if(loading)return<LoadingScreen/>
   if(!session)return<LoginScreen signIn={signIn}/>
+  if(onboarding)return<OnboardingScreen session={session} onComplete={completeOnboarding}/>
   if(!G)return<LoadingScreen/>
 
   const lv=getLv(G.xp),rank=getRank(lv),title=getTitle(lv)
@@ -262,6 +749,9 @@ export default function App(){
         {page==='weekly'&&<Weekly G={G} goalTab={goalTab} setGoalTab={setGoalTab} incGoal={incGoal} delGoal={delGoal} toggleX={toggleX} addX={addX} delX={delX} setModal={setModal}/>}
         {page==='calendar'&&<Calendar G={G} calY={calY} calM={calM} setCalY={setCalY} setCalM={setCalM} setModal={setModal}/>}
         {page==='attributes'&&<Attributes G={G} updAM={updAM}/>}
+        {page==='profile'&&<ProfilePage G={G} session={session} lv={lv} rank={rank} title={title} xpPct={xpPct} setModal={setModal}/>}
+        {page==='community'&&<CommunityPage G={G} session={session} rank={rank} lv={lv}/>}
+        {page==='leaderboard'&&<LeaderboardPage session={session}/>}
       </div>
       {/* MODALS */}
       {modal&&<ModalHost modal={modal} setModal={setModal} G={G} addM={addM} addGoal={addGoal} addX={addX} updPlayer={updPlayer} buyShop={buyShop} addShopItem={addShopItem} delShopItem={delShopItem} endDay={endDay}/>}
@@ -320,7 +810,7 @@ function LevelUpOverlay({data}){
 
 // ── NAV ────────────────────────────────────────────────────────────────────
 function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
-  const tabs=[{id:'dashboard',label:'🏠 Dashboard'},{id:'missions',label:'⚔ Missions'},{id:'weekly',label:'📊 Weekly'},{id:'calendar',label:'📅 Calendar'},{id:'attributes',label:'⚡ Attributes'}]
+  const tabs=[{id:'dashboard',label:'🏠 Dashboard'},{id:'missions',label:'⚔ Missions'},{id:'weekly',label:'📊 Weekly'},{id:'calendar',label:'📅 Calendar'},{id:'attributes',label:'⚡ Attributes'},{id:'profile',label:'👤 Profile'},{id:'community',label:'👥 Community'},{id:'leaderboard',label:'🏆 Ranks'}]
   return(
     <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 20px',backdropFilter:'blur(10px)',gap:12}}>
       <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2,flexShrink:0}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
