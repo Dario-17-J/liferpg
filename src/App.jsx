@@ -497,7 +497,7 @@ function LeaderboardPage({session}) {
 
 
 
-// ── PHASE 3: FRIENDS SYSTEM ────────────────────────────────────────────────
+// ── PHASE 3: FRIENDS SYSTEM ──────────────────────────────────────────────── v3.2 build:1774161123
 function FriendsPage({G, session}) {
   const [friends, setFriends] = useState([])
   const [requests, setRequests] = useState([])
@@ -815,7 +815,7 @@ function ChallengePage({G, session, notif}) {
 
     // Check if this week has an active challenge
     const { data: active } = await supabase.from('challenges')
-      .select('*').eq('week_id', weekId).eq('status', 'active').single()
+      .select('*').eq('week_id', weekId).eq('status', 'active').maybeSingle()
 
     if (active) {
       setChallenge(active)
@@ -830,8 +830,9 @@ function ChallengePage({G, session, notif}) {
 
       if (voting?.length) {
         setCandidates(voting)
-        // Check if user voted
-        const myVote = voting.find(c => c.votes?.includes(session.user.id))
+        // Check if user voted this week using votes table
+        const { data: myVote } = await supabase.from('challenge_votes')
+          .select('user_id').eq('user_id', session.user.id).eq('week_id', weekId).maybeSingle()
         if (myVote) setHasVoted(true)
       } else {
         // Generate new candidates for this week
@@ -839,7 +840,7 @@ function ChallengePage({G, session, notif}) {
         const toInsert = shuffled.map(c => ({
           week_id: weekId, status: 'voting',
           title: c.title, description: c.desc, icon: c.icon,
-          xp_reward: c.xpReward, votes: [], vote_count: 0
+          xp_reward: c.xpReward, vote_count: 0
         }))
         const { data: inserted } = await supabase.from('challenges').insert(toInsert).select()
         setCandidates(inserted||[])
@@ -850,13 +851,37 @@ function ChallengePage({G, session, notif}) {
 
   const vote = async (challengeId) => {
     if (hasVoted) return
-    await supabase.from('challenges').update({
-      votes: supabase.sql`array_append(votes, ${session.user.id})`,
-      vote_count: supabase.sql`vote_count + 1`
-    }).eq('id', challengeId)
+
+    const weekId = getWeekId()
+
+    // Try insert into votes table first
+    const { error: voteError } = await supabase.from('challenge_votes').insert({
+      user_id: session.user.id,
+      challenge_id: challengeId,
+      week_id: weekId
+    })
+
+    if (voteError) {
+      notif('Already voted this week!', 'penalty')
+      setHasVoted(true)
+      return
+    }
+
+    // Vote recorded — now increment count
+    const { data: cur } = await supabase
+      .from('challenges').select('vote_count').eq('id', challengeId).maybeSingle()
+
+    const newCount = (cur?.vote_count || 0) + 1
+    await supabase.from('challenges')
+      .update({ vote_count: newCount })
+      .eq('id', challengeId)
+
     setHasVoted(true)
     notif('✅ Vote cast!', 'xp')
-    loadChallenge()
+    // Update UI immediately without reloading
+    setCandidates(prev => prev.map(c =>
+      c.id === challengeId ? {...c, vote_count: newCount} : c
+    ))
   }
 
   const joinChallenge = async () => {
@@ -1235,19 +1260,41 @@ function LevelUpOverlay({data}){
 
 // ── NAV ────────────────────────────────────────────────────────────────────
 function NavBar({G,page,setPage,lv,rank,setModal,signOut}){
-  const tabs=[{id:'dashboard',label:'🏠 Dashboard'},{id:'missions',label:'⚔ Missions'},{id:'weekly',label:'📊 Weekly'},{id:'calendar',label:'📅 Calendar'},{id:'attributes',label:'⚡ Attributes'},{id:'profile',label:'👤 Profile'},{id:'community',label:'👥 Community'},{id:'leaderboard',label:'🏆 Ranks'},{id:'friends',label:'👥 Friends'},{id:'analytics',label:'📈 Analytics'},{id:'challenge',label:'⚡ Challenge'}]
+  const tabs=[
+    {id:'dashboard',icon:'🏠',label:'Dashboard'},
+    {id:'missions',icon:'⚔',label:'Missions'},
+    {id:'weekly',icon:'📊',label:'Weekly'},
+    {id:'calendar',icon:'📅',label:'Calendar'},
+    {id:'attributes',icon:'⚡',label:'Attributes'},
+    {id:'profile',icon:'👤',label:'Profile'},
+    {id:'community',icon:'💬',label:'Community'},
+    {id:'leaderboard',icon:'🏆',label:'Ranks'},
+    {id:'friends',icon:'👥',label:'Friends'},
+    {id:'analytics',icon:'📈',label:'Analytics'},
+    {id:'challenge',icon:'🎯',label:'Challenge'},
+  ]
   return(
-    <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 20px',backdropFilter:'blur(10px)',gap:12}}>
-      <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2,flexShrink:0}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
-      <div style={{display:'flex',gap:3,overflowX:'auto'}}>
-        {tabs.map(t=><button key={t.id} onClick={()=>setPage(t.id)} style={{padding:'6px 12px',background:page===t.id?'rgba(124,58,237,0.15)':'none',border:page===t.id?'1px solid #7c3aed':'1px solid transparent',borderRadius:4,color:page===t.id?'#a855f7':'#64748b',fontFamily:"'Rajdhani',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer',whiteSpace:'nowrap'}}>{t.label}</button>)}
-        <button onClick={()=>setModal({type:'shop'})} style={{padding:'6px 12px',background:'none',border:'1px solid rgba(245,158,11,0.3)',borderRadius:4,color:'#f59e0b',fontFamily:"'Rajdhani',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:'pointer'}}>🏪 Shop</button>
+    <nav style={{position:'sticky',top:0,zIndex:500,background:'rgba(10,10,15,0.97)',borderBottom:'1px solid #1e1e35',backdropFilter:'blur(10px)'}}>
+      {/* Top row */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 20px',borderBottom:'1px solid #1e1e35'}}>
+        <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.1rem',fontWeight:900,background:'linear-gradient(135deg,#a855f7,#06b6d4)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',letterSpacing:2}}>LIFE <span style={{WebkitTextFillColor:'#f59e0b'}}>RPG</span></div>
+        <div style={{display:'flex',alignItems:'center',gap:14}}>
+          <NavStat val={lv} lbl="Level"/>
+          <NavStat val={'🔥'+G.streak} lbl="Streak"/>
+          <NavStat val={G.gold} lbl="Gold" color="#f59e0b"/>
+          <button onClick={()=>setModal({type:'shop'})} style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:4,color:'#f59e0b',padding:'4px 10px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>🏪</button>
+          <button onClick={signOut} style={{background:'none',border:'1px solid #1e1e35',borderRadius:4,color:'#64748b',padding:'4px 8px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif"}}>OUT</button>
+        </div>
       </div>
-      <div style={{display:'flex',alignItems:'center',gap:14,flexShrink:0}}>
-        <NavStat val={lv} lbl="Level"/>
-        <NavStat val={'🔥'+G.streak} lbl="Streak"/>
-        <NavStat val={G.gold} lbl="Gold" color="#f59e0b"/>
-        <button onClick={signOut} style={{background:'none',border:'1px solid #1e1e35',borderRadius:4,color:'#64748b',padding:'4px 8px',cursor:'pointer',fontSize:11,fontFamily:"'Rajdhani',sans-serif"}}>SIGN OUT</button>
+      {/* Bottom row - icon tabs */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-around',padding:'4px 8px'}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setPage(t.id)} title={t.label} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1,padding:'4px 6px',background:page===t.id?'rgba(124,58,237,0.15)':'none',border:'none',borderRadius:4,color:page===t.id?'#a855f7':'#64748b',cursor:'pointer',minWidth:36,position:'relative'}}>
+            <span style={{fontSize:'1rem',lineHeight:1}}>{t.icon}</span>
+            <span style={{fontSize:8,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',whiteSpace:'nowrap'}}>{t.label}</span>
+            {page===t.id&&<div style={{position:'absolute',bottom:-4,left:'50%',transform:'translateX(-50%)',width:20,height:2,background:'#7c3aed',borderRadius:1}}/>}
+          </button>
+        ))}
       </div>
     </nav>
   )
