@@ -1257,10 +1257,14 @@ export default function App(){
       const newRank=getRank(cl)
       setLvUpAnim({from:pl,to:cl,rank:newRank,title:getTitle(cl)})
       setTimeout(()=>setLvUpAnim(null),3500)
-      // auto post to community
+      // auto post to community — only if this level hasn't been posted before
       if(G){
-        const nm=G.player?.n||'Hunter'
-        postStory('levelup',`${nm} reached Level ${cl}!`,`Just hit ${newRank.icon} ${newRank.lbl} rank. DORMANT to MONARCH — the grind continues. 🔥`)
+        const postedLevels = G.postedLevels || []
+        if(!postedLevels.includes(cl)){
+          const nm=G.player?.n||'Hunter'
+          postStory('levelup',`${nm} reached Level ${cl}!`,`Just hit ${newRank.icon} ${newRank.lbl} rank. DORMANT to MONARCH — the grind continues. 🔥`)
+          upd(s=>{s.postedLevels=[...(s.postedLevels||[]),cl];return s})
+        }
       }
       return(cl-pl)*50
     }
