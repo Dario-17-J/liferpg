@@ -1947,6 +1947,43 @@ function Dashboard({G,lv,rank,title,xpPct,toggleM,delM,setPage,setModal,goalTab,
 // ── MISSIONS PAGE ──────────────────────────────────────────────────────────
 function Missions({G,toggleM,delM,setModal,endDay,toggleX,addX,delX}){
   const pending=G.missions.filter(m=>!m.done&&!m.pen&&m.penalty>0)
+  const [isMobile,setIsMobile]=useState(window.innerWidth<768)
+  useEffect(()=>{const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn)},[])
+
+  if(isMobile) return(
+    <div style={{padding:'0 4px'}}>
+      {/* S-Tier */}
+      <Panel title="S-Tier — Critical" topColor="#ef4444" style={{marginBottom:12}}
+        action={<Btn sm variant="red" onClick={()=>setModal({type:'mission',tier:'S'})}>+ ADD</Btn>}>
+        <div style={{fontSize:9,color:'#fca5a5',fontFamily:"'Share Tech Mono',monospace",marginBottom:8}}>×1.5 XP · HIGH STAKES</div>
+        {G.missions.filter(m=>m.tier==='S').length
+          ? G.missions.filter(m=>m.tier==='S').map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>delM(m.id)}/>)
+          : <div style={{textAlign:'center',padding:16,color:'#334155',fontSize:13,fontStyle:'italic'}}>No S-tier missions. <span onClick={()=>setModal({type:'mission',tier:'S'})} style={{color:'#ef4444',cursor:'pointer'}}>+ Add one</span></div>}
+      </Panel>
+      {/* A-Tier */}
+      <Panel title="A-Tier — Daily Habits" topColor="#f59e0b" style={{marginBottom:12}}
+        action={<Btn sm onClick={()=>setModal({type:'mission',tier:'A'})}>+ ADD</Btn>}>
+        <div style={{fontSize:9,color:'#f59e0b',fontFamily:"'Share Tech Mono',monospace",marginBottom:8}}>STANDARD MISSIONS</div>
+        {G.missions.filter(m=>m.tier==='A').length
+          ? G.missions.filter(m=>m.tier==='A').map(m=><MissionItem key={m.id} m={m} am={G.am} onToggle={()=>toggleM(m.id)} onDel={()=>delM(m.id)}/>)
+          : <div style={{textAlign:'center',padding:16,color:'#334155',fontSize:13,fontStyle:'italic'}}>No A-tier missions. <span onClick={()=>setModal({type:'mission',tier:'A'})} style={{color:'#f59e0b',cursor:'pointer'}}>+ Add one</span></div>}
+      </Panel>
+      {/* Status */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+        <div style={{padding:12,background:'#0f0f1a',border:'1px solid #1e1e35',borderRadius:8,textAlign:'center'}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:'1.6rem',fontWeight:900,color:'#f59e0b'}}>{G.streak}</div>
+          <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>🔥 Streak</div>
+          <div style={{fontSize:9,color:'#334155'}}>Best: {G.best}</div>
+        </div>
+        <Btn variant="danger" onClick={endDay} style={{width:'100%',height:'100%'}}>⚠ CLOSE DAY</Btn>
+      </div>
+      {pending.length>0&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:11,color:'#ef4444',padding:10,background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,marginBottom:12}}>⚠ {pending.length} missions · -{pending.reduce((s,m)=>s+m.penalty,0)} XP if closed</div>}
+      <Panel title="Bonus Tasks">
+        <ExtraList extras={G.extras} toggleX={toggleX} delX={delX} addX={addX}/>
+      </Panel>
+    </div>
+  )
+
   return(
     <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:16}}>
       <div>
